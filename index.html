@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Datawrapper Map Search</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 20px;
+      max-width: 900px;
+    }
+    h1 {
+      margin-bottom: 20px;
+    }
+
+    /* Search box */
+    .search-container {
+      position: relative;
+      display: inline-block;
+      margin-bottom: 20px;
+    }
+
+    #search {
+      width: 300px;
+      padding: 10px 14px;
+      font-size: 16px;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      outline: none;
+    }
+    #search:focus {
+      border-color: #4a90d9;
+    }
+
+    #autocomplete-list {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      border: 1px solid #ccc;
+      background: white;
+      max-height: 250px;
+      overflow-y: auto;
+      width: 300px;
+      z-index: 9999;
+      border-radius: 0 0 6px 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    #autocomplete-list div {
+      padding: 10px 14px;
+      cursor: pointer;
+      border-bottom: 1px solid #eee;
+    }
+    #autocomplete-list div:last-child {
+      border-bottom: none;
+    }
+    #autocomplete-list div:hover {
+      background: #f0f7ff;
+    }
+
+    /* Unified info box above map */
+    #info-box {
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      min-height: 80px;
+      display: flex;
+      align-items: center;
+      transition: all 0.2s ease;
+    }
+    #info-box.has-content {
+      border-color: #4a90d9;
+      box-shadow: 0 2px 8px rgba(74, 144, 217, 0.15);
+    }
+    #info-box .placeholder {
+      color: #868e96;
+      font-size: 14px;
+    }
+    #info-box .content {
+      display: none;
+      width: 100%;
+    }
+    #info-box.has-content .placeholder {
+      display: none;
+    }
+    #info-box.has-content .content {
+      display: block;
+    }
+
+    /* Info box internal styling */
+    #info-box .region-name {
+      font-size: 18px;
+      font-weight: 600;
+      color: #212529;
+      margin: 0 0 8px 0;
+    }
+    #info-box .region-data {
+      font-size: 14px;
+      color: #495057;
+      line-height: 1.5;
+    }
+    #info-box .region-data strong {
+      color: #212529;
+    }
+
+    /* Chart container */
+    #chart-container {
+      min-height: 500px;
+      position: relative;
+    }
+
+    /* Debug panel */
+    #debug {
+      background: #f8f9fa;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 20px;
+      font-family: monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    #debug.hidden {
+      display: none;
+    }
+
+    .controls {
+      margin-bottom: 15px;
+    }
+    .controls button {
+      padding: 6px 12px;
+      cursor: pointer;
+      margin-right: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: white;
+    }
+    .controls button:hover {
+      background: #f8f9fa;
+    }
+  </style>
+</head>
+<body>
+  <h1>Map Search</h1>
+
+  <div class="search-container">
+    <input id="search" placeholder="Search region…" autocomplete="off" />
+    <div id="autocomplete-list"></div>
+  </div>
+
+  <!-- Unified info box - shows both search results and hover data -->
+  <div id="info-box">
+    <div class="placeholder">👆 Hover over the map or search for a region to see details</div>
+    <div class="content">
+      <div class="region-name" id="info-name"></div>
+      <div class="region-data" id="info-data"></div>
+    </div>
+  </div>
+
+  <!-- Datawrapper Web Component Embed -->
+  <div id="chart-container">
+    <script type="text/javascript" defer src="https://datawrapper.dwcdn.net/y2Rq7/embed.js" charset="utf-8"></script>
+    <noscript><img src="https://datawrapper.dwcdn.net/wcCdY/full.png" alt="" /></noscript>
+  </div>
+
+  <div class="controls">
+    <button id="toggle-debug">Toggle Debug</button>
+    <button id="clear-info">Clear Info Box</button>
+  </div>
+  <div id="debug" class="hidden"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
