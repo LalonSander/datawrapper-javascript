@@ -77,8 +77,8 @@ function buildGeometryLookup() {
   const geometries = mapData.objects.regions.geometries;
 
   geometries.forEach(geom => {
-    if (geom.properties && geom.properties.ARS) {
-      geometryByARS[geom.properties.ARS] = geom;
+    if (geom.properties && geom.properties.AGS) {
+      geometryByARS[geom.properties.AGS] = geom;
     }
   });
 
