@@ -34,11 +34,11 @@ function loadCSV() {
       lines.forEach(line => {
         const cols = parseCSVLine(line);
         const name = cols[0];
-        const ars = cols[1];
+        const ags = cols[1];
         const tooltip = cols[2];
 
-        if (name && ars && tooltip) {
-          regionTooltips[name.toLowerCase()] = { name, ars, tooltip };
+        if (name && ags && tooltip) {
+          regionTooltips[name.toLowerCase()] = { name, ars: ags, tooltip };
           regionNames.push(name);
         }
       });
@@ -50,25 +50,68 @@ function loadCSV() {
 loadCSV();
 
 
-// --- LOAD MAP.JSON ---
+// --- MAP DATA (loaded via Performance API after Datawrapper fetches it) ---
 let mapData = null;
 let geometryByARS = {};
 let geoPathGenerator = null;
 
-function loadMapData() {
-  fetch('map.json')
+// Maximum time to wait for the basemap resource to appear in performance entries
+const BASEMAP_POLL_TIMEOUT_MS = 10000;
+const BASEMAP_POLL_INTERVAL_MS = 300;
+const BASEMAP_URL_PATTERN = 'datawrapper.dwcdn.net/lib/basemaps/germany-gemeinde';
+
+function findBasemapUrlFromPerformanceEntries() {
+  const resourceEntries = performance.getEntriesByType('resource');
+
+  for (const entry of resourceEntries) {
+    if (entry.name.includes(BASEMAP_URL_PATTERN)) {
+      return entry.name;
+    }
+  }
+
+  return null;
+}
+
+function loadMapDataFromBasemapUrl(basemapUrl) {
+  log("📡 Fetching basemap from: " + basemapUrl);
+
+  fetch(basemapUrl)
     .then(r => r.json())
     .then(data => {
       mapData = data.content || data;
       buildGeometryLookup();
-      log("✅ Loaded map.json");
+      log("✅ Loaded basemap via Performance API");
 
-      // Setup path generator when shadowRoot is ready
+      // Setup path generator now that map data is available
       if (shadowRoot) {
         setupPathGenerator();
       }
     })
-    .catch(err => log("❌ Map load error: " + err));
+    .catch(err => log("❌ Basemap fetch error: " + err));
+}
+
+function pollForBasemapUrl() {
+  const startTime = Date.now();
+
+  function attempt() {
+    const basemapUrl = findBasemapUrlFromPerformanceEntries();
+
+    if (basemapUrl) {
+      loadMapDataFromBasemapUrl(basemapUrl);
+      return;
+    }
+
+    const elapsedMs = Date.now() - startTime;
+
+    if (elapsedMs >= BASEMAP_POLL_TIMEOUT_MS) {
+      log("❌ Timed out waiting for basemap resource in performance entries");
+      return;
+    }
+
+    setTimeout(attempt, BASEMAP_POLL_INTERVAL_MS);
+  }
+
+  attempt();
 }
 
 function buildGeometryLookup() {
@@ -77,33 +120,29 @@ function buildGeometryLookup() {
   const geometries = mapData.objects.regions.geometries;
 
   geometries.forEach(geom => {
-    if (geom.properties && geom.properties.AGS) {
-      geometryByARS[geom.properties.AGS] = geom;
+    const properties = geom.properties;
+
+    if (properties.AGS) {
+      geometryByARS[properties.AGS] = geom;
     }
   });
 
   log("✅ Built geometry lookup with " + Object.keys(geometryByARS).length + " entries");
 }
 
-loadMapData();
-
 
 // --- SETUP D3 PATH GENERATOR ---
 function setupPathGenerator() {
   if (!shadowRoot || !mapData) return;
 
-  // Get SVG dimensions
   const svg = shadowRoot.querySelector('svg.svg-main');
   const width = svg.getAttribute('width');
   const height = svg.getAttribute('height');
 
-
   log(`SVG dimensions: ${width} x ${height}`);
   const { left } = svg.getBoundingClientRect();
-
   console.log("SVG X offset from viewport:", left);
 
-  // Get the bbox from map.json
   const bbox = mapData.bbox;
   const bboxMinX = bbox[0];
   const bboxMinY = bbox[1];
@@ -115,22 +154,19 @@ function setupPathGenerator() {
   log(`Map bbox: [${bbox.join(', ')}]`);
   log(`Bbox size: ${bboxWidth.toFixed(4)} x ${bboxHeight.toFixed(4)}`);
 
-    // Fallback: calculate uniform scale from bbox
   const scale = Math.min(width / bboxWidth, height / bboxHeight);
-
 
   const translateX = width / 2 - (bboxMinX + bboxWidth / 2) * scale;
   const translateY = height / 2 - (bboxMinY + bboxHeight / 2) * scale;
 
-  log(`Fallback transform: scale=${scale.toFixed(6)}, translate=(${translateX.toFixed(2)}, ${translateY.toFixed(2)})`);
-
+  log(`Transform: scale=${scale.toFixed(6)}, translate=(${translateX.toFixed(2)}, ${translateY.toFixed(2)})`);
 
   geoPathGenerator = {
-      scaleX: scale,
-      scaleY: scale,
-      translateX: translateX,
-      translateY: translateY
-    };
+    scaleX: scale,
+    scaleY: scale,
+    translateX: translateX,
+    translateY: translateY
+  };
 }
 
 function getFirstPoint(ars) {
@@ -148,7 +184,6 @@ function verifyTransform(ars, expectedX, expectedY, name) {
   const geom = geometryByARS[ars];
   if (!geom || !geoPathGenerator) return;
 
-  // Get first coordinate
   const firstArc = geom.type === 'MultiPolygon' ? geom.arcs[0][0][0] : geom.arcs[0][0];
   const arcIdx = firstArc < 0 ? ~firstArc : firstArc;
   const coord = mapData.arcs[arcIdx][0];
@@ -198,7 +233,6 @@ function geometryToPath(geometry, scaleX, scaleY, translateX, translateY) {
     let coords = [];
     ring.forEach((arcIndex, i) => {
       let arcCoords = processArc(arcIndex);
-      // Skip first point of subsequent arcs to avoid duplicates
       if (i > 0 && arcCoords.length > 0) {
         arcCoords = arcCoords.slice(1);
       }
@@ -271,6 +305,11 @@ function waitForChart() {
     shadowRoot = component.shadowRoot;
     log("✅ Found Datawrapper web component");
 
+    // Now that the component exists, start polling for the basemap in
+    // performance entries — Datawrapper will have fetched it by this point
+    // or will fetch it very shortly
+    pollForBasemapUrl();
+
     setTimeout(setupTooltipInterception, 500);
   } else {
     setTimeout(waitForChart, 300);
@@ -279,7 +318,6 @@ function waitForChart() {
 
 setTimeout(waitForChart, 500);
 
-//check for resize incase the paths need to be recalculated
 function observeResizeForPathGenerator() {
   const svg = shadowRoot.querySelector('svg.svg-main');
   if (!svg) return;
@@ -287,11 +325,10 @@ function observeResizeForPathGenerator() {
   let resizeTimeout;
 
   const resizeObserver = new ResizeObserver(() => {
-    // debounce rapid resizes
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(() => {
       setupPathGenerator();
-    }, 500); // wait 50ms for layout to settle
+    }, 500);
   });
 
   resizeObserver.observe(svg);
@@ -301,14 +338,12 @@ function observeResizeForPathGenerator() {
 
 // --- SETUP TOOLTIP INTERCEPTION ---
 function setupTooltipInterception(retries = 10) {
-  // Try to find the native tooltip element
   tooltipElement = shadowRoot.querySelector('dw-tooltip');
 
   if (!tooltipElement) {
     tooltipElement = shadowRoot.querySelector('.tooltip, [class*="tooltip"]');
   }
 
-  // Retry logic
   if (!tooltipElement) {
     log(`❌ No tooltip element found. Retries left: ${retries}`);
 
@@ -320,10 +355,8 @@ function setupTooltipInterception(retries = 10) {
     }
   }
 
-  // Found tooltip
   log("✅ Found tooltip element");
 
-  // Find the hover outline element
   hoverOutlineElement = shadowRoot.querySelector('.hover-outline');
   if (hoverOutlineElement) {
     log("✅ Found hover-outline element");
@@ -331,18 +364,13 @@ function setupTooltipInterception(retries = 10) {
     log("⚠️ No hover-outline element found");
   }
 
-  // Setup the path generator (if map data is ready)
+  // Setup path generator if map data has already arrived by this point
   if (mapData) {
     setupPathGenerator();
   }
 
-  //observe svg size to recalculate paths
   observeResizeForPathGenerator();
-
-  // Watch for tooltip content changes
   setupTooltipObserver();
-
-  // Hide native tooltip visually but keep it functional
   hideNativeTooltip();
 }
 
@@ -363,7 +391,7 @@ function hideNativeTooltip() {
 }
 
 
-// --- UPDATE HOVER OUTLINE FROM MAP.JSON ---
+// --- UPDATE HOVER OUTLINE FROM MAP DATA ---
 function updateHoverOutline(ars) {
   if (!hoverOutlineElement) {
     hoverOutlineElement = shadowRoot?.querySelector('.hover-outline');
@@ -423,14 +451,12 @@ function setupTooltipObserver() {
   }
 
   tooltipObserver = new MutationObserver(() => {
-    // Look for h2 inside the tooltip
     const h2 = tooltipElement.querySelector('h2');
 
     if (h2) {
       const regionName = h2.textContent.trim();
       log("📡 Tooltip h2: " + regionName);
 
-      // Look up this region in our CSV
       const regionData = regionTooltips[regionName.toLowerCase()];
 
       if (regionData) {
@@ -518,7 +544,6 @@ search.addEventListener("input", () => {
   const matches = fuzzySearch(q);
   renderAutocomplete(matches);
 
-  // Exact match → show immediately
   if (regionTooltips[q.toLowerCase()]) {
     showRegionFromSearch(q);
   }
