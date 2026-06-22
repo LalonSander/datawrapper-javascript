@@ -615,6 +615,22 @@ search.addEventListener("input", () => {
 });
 
 
+// --- SEARCH BUTTON CLICK HANDLER ---
+// Clicking the magnifier button submits whatever is currently typed,
+// same behaviour as pressing Enter would give in a native search form
+const searchButton = document.getElementById("search-button");
+
+searchButton.addEventListener("click", () => {
+  const q = search.value.trim();
+  if (!q) {
+    return;
+  }
+
+  list.innerHTML = "";
+  showRegionFromSearch(q);
+});
+
+
 // --- CLOSE AUTOCOMPLETE ON OUTSIDE CLICK ---
 document.addEventListener("click", (e) => {
   if (e.target !== search) {
