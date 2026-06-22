@@ -16,23 +16,56 @@
       margin-bottom: 20px;
     }
 
-    /* Search box */
-    .search-container {
+    /* Search frame — outer wrapper per Figma "search frame" spec */
+    .search-frame {
       position: relative;
-      display: inline-block;
+      display: inline-flex;
+      align-items: stretch;
+      width: 351px;
+      height: 50px;
+      gap: 10px;
+      opacity: 1;
       margin-bottom: 20px;
     }
 
+    /* Search text entry field */
     #search {
-      width: 300px;
-      padding: 10px 14px;
+      width: 291px;
+      height: 50px;
+      padding: 0 15px;
       font-size: 16px;
-      border: 2px solid #ddd;
-      border-radius: 6px;
+      border: 1px solid rgba(31, 31, 31, 1);
+      border-radius: 0;
+      background: rgba(255, 255, 255, 1);
       outline: none;
+      box-sizing: border-box;
     }
     #search:focus {
-      border-color: #4a90d9;
+      border-color: rgba(31, 31, 31, 1);
+    }
+
+    /* Search button — default dark state, red on hover */
+    #search-button {
+      width: 50px;
+      height: 50px;
+      padding: 0 20px;
+      border: none;
+      border-radius: 0;
+      background: rgba(31, 31, 31, 1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    #search-button:hover {
+      background: rgba(170, 10, 37, 1);
+    }
+    #search-button svg {
+      width: 18px;
+      height: 18px;
+      stroke: white;
+      fill: none;
     }
 
     #autocomplete-list {
@@ -43,7 +76,7 @@
       background: white;
       max-height: 250px;
       overflow-y: auto;
-      width: 300px;
+      width: 351px;
       z-index: 9999;
       border-radius: 0 0 6px 6px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
@@ -147,10 +180,16 @@
   </style>
 </head>
 <body>
-  <h1>Map Search</h1>
+  <h1>Hitze in Schulen</h1>
 
-  <div class="search-container">
-    <input id="search" placeholder="Search region…" autocomplete="off" />
+  <div class="search-frame">
+    <input id="search" placeholder="Schlagwortsuche" autocomplete="off" />
+    <button id="search-button" type="button" aria-label="Suchen">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="7"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+    </button>
     <div id="autocomplete-list"></div>
   </div>
 
