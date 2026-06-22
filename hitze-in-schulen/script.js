@@ -1,6 +1,11 @@
-// --- LOAD CSV AND BUILD LOOKUP ---
+// --- TOOLTIP DATA (loaded via Performance API after Datawrapper fetches dataset.csv) ---
 let regionTooltips = {};  // name (lowercase) -> { name, ars, tooltip }
 let regionNames = [];
+
+// Maximum time to wait for the dataset.csv resource to appear in performance entries
+const DATASET_POLL_TIMEOUT_MS = 10000;
+const DATASET_POLL_INTERVAL_MS = 300;
+const DATASET_URL_PATTERN = 'dataset.csv';
 
 function parseCSVLine(line) {
   const result = [];
@@ -24,30 +29,81 @@ function parseCSVLine(line) {
   return result;
 }
 
-function loadCSV() {
-  fetch('regions.csv')
-    .then(r => r.text())
-    .then(text => {
-      const lines = text.trim().split('\n');
-      lines.shift();
+function findDatasetUrlFromPerformanceEntries() {
+  const resourceEntries = performance.getEntriesByType('resource');
 
-      lines.forEach(line => {
-        const cols = parseCSVLine(line);
-        const name = cols[0];
-        const ags = cols[1];
-        const tooltip = cols[2];
+  for (const entry of resourceEntries) {
+    if (entry.name.includes(DATASET_URL_PATTERN)) {
+      return entry.name;
+    }
+  }
 
-        if (name && ags && tooltip) {
-          regionTooltips[name.toLowerCase()] = { name, ars: ags, tooltip };
-          regionNames.push(name);
-        }
-      });
-      log("✅ Loaded " + regionNames.length + " regions with tooltips");
-    })
-    .catch(err => log("❌ CSV load error: " + err));
+  return null;
 }
 
-loadCSV();
+function parseDatasetCSV(csvText) {
+  const lines = csvText.trim().split('\n');
+
+  // First line is the header row — find the column index for each field we need
+  const headerCols = parseCSVLine(lines[0]);
+  const nameColumnIndex = headerCols.indexOf('region');
+  const agsColumnIndex = headerCols.indexOf('AGS');
+  const tooltipColumnIndex = headerCols.indexOf('tooltip');
+
+  if (nameColumnIndex === -1 || agsColumnIndex === -1 || tooltipColumnIndex === -1) {
+    log("❌ dataset.csv missing expected columns (region, AGS, tooltip). Found: " + headerCols.join(', '));
+    return;
+  }
+
+  const dataLines = lines.slice(1);
+
+  dataLines.forEach(line => {
+    const cols = parseCSVLine(line);
+    const name = cols[nameColumnIndex];
+    const ags = cols[agsColumnIndex];
+    const tooltip = cols[tooltipColumnIndex];
+
+    if (name && ags && tooltip) {
+      regionTooltips[name.toLowerCase()] = { name, ars: ags, tooltip };
+      regionNames.push(name);
+    }
+  });
+
+  log("✅ Loaded " + regionNames.length + " regions with tooltips from dataset.csv");
+}
+
+function loadDatasetFromUrl(datasetUrl) {
+  log("📡 Fetching dataset from: " + datasetUrl);
+
+  fetch(datasetUrl)
+    .then(r => r.text())
+    .then(text => parseDatasetCSV(text))
+    .catch(err => log("❌ dataset.csv fetch error: " + err));
+}
+
+function pollForDatasetUrl() {
+  const startTime = Date.now();
+
+  function attempt() {
+    const datasetUrl = findDatasetUrlFromPerformanceEntries();
+
+    if (datasetUrl) {
+      loadDatasetFromUrl(datasetUrl);
+      return;
+    }
+
+    const elapsedMs = Date.now() - startTime;
+
+    if (elapsedMs >= DATASET_POLL_TIMEOUT_MS) {
+      log("❌ Timed out waiting for dataset.csv resource in performance entries");
+      return;
+    }
+
+    setTimeout(attempt, DATASET_POLL_INTERVAL_MS);
+  }
+
+  attempt();
+}
 
 
 // --- MAP DATA (loaded via Performance API after Datawrapper fetches it) ---
@@ -121,6 +177,10 @@ function buildGeometryLookup() {
 
   geometries.forEach(geom => {
     const properties = geom.properties;
+
+    if (properties.ARS) {
+      geometryByARS[properties.ARS] = geom;
+    }
 
     if (properties.AGS) {
       geometryByARS[properties.AGS] = geom;
@@ -309,6 +369,11 @@ function waitForChart() {
     // performance entries — Datawrapper will have fetched it by this point
     // or will fetch it very shortly
     pollForBasemapUrl();
+
+    // Separate, independent poll for dataset.csv (the tooltip data) —
+    // kept separate from the basemap poll since the two resources load
+    // at different times and have their own timeout/retry needs
+    pollForDatasetUrl();
 
     setTimeout(setupTooltipInterception, 500);
   } else {
