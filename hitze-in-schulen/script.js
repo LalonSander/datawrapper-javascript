@@ -734,6 +734,8 @@ function setupTooltipObserver() {
         showInfoBox(regionData.name, regionData.tooltip);
         updateHoverOutline(regionData.ars);
         updateRegionPin(regionData.ars);
+        search.value = regionData.name;  // ADD: keep search field in sync with hovered region
+        list.innerHTML = "";              // ADD: clear any open autocomplete dropdown
       } else {
         log("⚠️ No CSV match for: " + regionName);
       }
