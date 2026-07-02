@@ -227,6 +227,11 @@ function setupPathGenerator() {
     translateX: translateX,
     translateY: translateY
   };
+
+  // If a pin is currently shown, reposition it since the transform has changed
+  if (currentPinArs) {
+    updateRegionPin(currentPinArs);
+  }
 }
 
 function getFirstPoint(ars) {
@@ -327,6 +332,213 @@ function geometryToPath(geometry, scaleX, scaleY, translateX, translateY) {
 }
 
 
+// --- REGION PIN ---
+
+// Tracks which region currently has a pin so we can reposition it on resize
+let currentPinArs = null;
+
+// ID used to find and remove the pin group from the shadow DOM SVG
+const REGION_PIN_GROUP_ID = 'region-pin-group';
+
+// Pin appearance — taz red to match the design system
+const PIN_COLOR = '#d50d2e';
+const PIN_DOT_RADIUS = 5;
+
+// Pulse ring starts at the same size as the dot and expands outward
+const PIN_PULSE_RADIUS_START = PIN_DOT_RADIUS;
+const PIN_PULSE_RADIUS_END = PIN_DOT_RADIUS * 4;
+
+// Duration of one pulse cycle in milliseconds
+const PIN_PULSE_DURATION_MS = 1500;
+
+
+function collectAllArcCoordinates(geometry) {
+  // Collect every coordinate point from every arc in the geometry so we
+  // can compute the mean centroid by averaging all of them.
+  // This is a rough but visually good centroid for placing a pin.
+  const allCoords = [];
+
+  function collectFromRing(ring) {
+    for (const arcIndex of ring) {
+      const isReversed = arcIndex < 0;
+      const actualIndex = isReversed ? ~arcIndex : arcIndex;
+      const arc = mapData.arcs[actualIndex];
+
+      if (!arc) continue;
+
+      for (const coord of arc) {
+        allCoords.push(coord);
+      }
+    }
+  }
+
+  if (geometry.type === 'Polygon') {
+    for (const ring of geometry.arcs) {
+      collectFromRing(ring);
+    }
+  } else if (geometry.type === 'MultiPolygon') {
+    for (const polygon of geometry.arcs) {
+      for (const ring of polygon) {
+        collectFromRing(ring);
+      }
+    }
+  }
+
+  return allCoords;
+}
+
+
+function computeGeometryCentroid(geometry) {
+  // Average all coordinate points in the geometry to find a mean centroid.
+  // Returns coordinates in TopoJSON space (before SVG transform is applied).
+  const allCoords = collectAllArcCoordinates(geometry);
+
+  if (allCoords.length === 0) {
+    return null;
+  }
+
+  let sumX = 0;
+  let sumY = 0;
+
+  for (const coord of allCoords) {
+    sumX += coord[0];
+    sumY += coord[1];
+  }
+
+  const centroidX = sumX / allCoords.length;
+  const centroidY = sumY / allCoords.length;
+
+  return { x: centroidX, y: centroidY };
+}
+
+
+function convertCentroidToSvgCoords(centroid) {
+  // Apply the same transform used by geometryToPath to convert from
+  // TopoJSON coordinate space into SVG pixel coordinates
+  const svgX = centroid.x * geoPathGenerator.scaleX + geoPathGenerator.translateX;
+  const svgY = centroid.y * geoPathGenerator.scaleY + geoPathGenerator.translateY;
+
+  return { x: svgX, y: svgY };
+}
+
+
+function buildPinPulseAnimation(radiusStart, radiusEnd, durationMs) {
+  // Build an SVG <animate> element that expands the pulse ring outward
+  // and fades it out, creating a ripple effect. Using SVG-native animation
+  // avoids needing to inject a <style> element into the shadow DOM.
+  const animateRadius = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+  animateRadius.setAttribute('attributeName', 'r');
+  animateRadius.setAttribute('from', radiusStart);
+  animateRadius.setAttribute('to', radiusEnd);
+  animateRadius.setAttribute('dur', `${durationMs}ms`);
+  animateRadius.setAttribute('repeatCount', 'indefinite');
+
+  const animateOpacity = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+  animateOpacity.setAttribute('attributeName', 'opacity');
+  animateOpacity.setAttribute('from', '0.6');
+  animateOpacity.setAttribute('to', '0');
+  animateOpacity.setAttribute('dur', `${durationMs}ms`);
+  animateOpacity.setAttribute('repeatCount', 'indefinite');
+
+  return [animateRadius, animateOpacity];
+}
+
+
+function buildPinGroup(svgX, svgY) {
+  // Build the full pin marker: a pulsing outer ring plus a solid centre dot.
+  // Both are appended to a <g> group so they can be removed together.
+  const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  group.setAttribute('id', REGION_PIN_GROUP_ID);
+
+  // Outer pulse ring — starts at dot size, expands and fades via SVG animation
+  const pulseRing = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  pulseRing.setAttribute('cx', svgX);
+  pulseRing.setAttribute('cy', svgY);
+  pulseRing.setAttribute('r', PIN_PULSE_RADIUS_START);
+  pulseRing.setAttribute('fill', 'none');
+  pulseRing.setAttribute('stroke', PIN_COLOR);
+  pulseRing.setAttribute('stroke-width', '2');
+  pulseRing.setAttribute('opacity', '0.6');
+
+  const [animateRadius, animateOpacity] = buildPinPulseAnimation(
+    PIN_PULSE_RADIUS_START,
+    PIN_PULSE_RADIUS_END,
+    PIN_PULSE_DURATION_MS
+  );
+  pulseRing.appendChild(animateRadius);
+  pulseRing.appendChild(animateOpacity);
+
+  // Solid centre dot — always visible, sits on top of the pulse ring
+  const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  dot.setAttribute('cx', svgX);
+  dot.setAttribute('cy', svgY);
+  dot.setAttribute('r', PIN_DOT_RADIUS);
+  dot.setAttribute('fill', PIN_COLOR);
+
+  group.appendChild(pulseRing);
+  group.appendChild(dot);
+
+  return group;
+}
+
+
+function updateRegionPin(ars) {
+  // Remove any existing pin first, then place a new one at the centroid
+  // of the region identified by the given ARS/AGS code
+  clearRegionPin();
+
+  if (!geoPathGenerator) {
+    log("⚠️ Cannot place pin — path generator not ready");
+    return;
+  }
+
+  const geometry = geometryByARS[ars];
+  if (!geometry) {
+    log("⚠️ Cannot place pin — no geometry found for ARS: " + ars);
+    return;
+  }
+
+  const centroid = computeGeometryCentroid(geometry);
+  if (!centroid) {
+    log("⚠️ Cannot place pin — centroid computation returned no coordinates for ARS: " + ars);
+    return;
+  }
+
+  const svgCoords = convertCentroidToSvgCoords(centroid);
+
+  const svg = shadowRoot.querySelector('svg.svg-main');
+  if (!svg) {
+    log("⚠️ Cannot place pin — SVG element not found in shadow DOM");
+    return;
+  }
+
+  const pinGroup = buildPinGroup(svgCoords.x, svgCoords.y);
+  svg.appendChild(pinGroup);
+
+  // Remember which region has the pin so setupPathGenerator can reposition
+  // it if the SVG resizes and the transform changes
+  currentPinArs = ars;
+
+  log(`✅ Placed pin at SVG (${svgCoords.x.toFixed(1)}, ${svgCoords.y.toFixed(1)}) for ARS: ${ars}`);
+}
+
+
+function clearRegionPin() {
+  // Remove the pin group from the shadow DOM SVG if it exists
+  if (!shadowRoot) return;
+
+  const svg = shadowRoot.querySelector('svg.svg-main');
+  if (!svg) return;
+
+  const existingPin = svg.getElementById(REGION_PIN_GROUP_ID);
+  if (existingPin) {
+    existingPin.remove();
+  }
+
+  currentPinArs = null;
+}
+
+
 // --- DOM ELEMENTS ---
 const search = document.getElementById("search");
 const list = document.getElementById("autocomplete-list");
@@ -365,14 +577,7 @@ function waitForChart() {
     shadowRoot = component.shadowRoot;
     log("✅ Found Datawrapper web component");
 
-    // Now that the component exists, start polling for the basemap in
-    // performance entries — Datawrapper will have fetched it by this point
-    // or will fetch it very shortly
     pollForBasemapUrl();
-
-    // Separate, independent poll for dataset.csv (the tooltip data) —
-    // kept separate from the basemap poll since the two resources load
-    // at different times and have their own timeout/retry needs
     pollForDatasetUrl();
 
     setTimeout(setupTooltipInterception, 500);
@@ -429,7 +634,6 @@ function setupTooltipInterception(retries = 10) {
     log("⚠️ No hover-outline element found");
   }
 
-  // Setup path generator if map data has already arrived by this point
   if (mapData) {
     setupPathGenerator();
   }
@@ -527,6 +731,7 @@ function setupTooltipObserver() {
       if (regionData) {
         showInfoBox(regionData.name, regionData.tooltip);
         updateHoverOutline(regionData.ars);
+        updateRegionPin(regionData.ars);
       } else {
         log("⚠️ No CSV match for: " + regionName);
       }
@@ -555,6 +760,7 @@ function clearInfoBox() {
   infoData.innerHTML = '';
   infoBox.classList.remove('has-content');
   clearHoverOutline();
+  clearRegionPin();
 }
 
 
@@ -565,6 +771,7 @@ function showRegionFromSearch(regionName) {
   if (regionData) {
     showInfoBox(regionData.name, regionData.tooltip);
     updateHoverOutline(regionData.ars);
+    updateRegionPin(regionData.ars);
   } else {
     showInfoBox(regionName, "Keine Daten verfügbar");
   }
