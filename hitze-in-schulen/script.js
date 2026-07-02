@@ -341,7 +341,9 @@ let currentPinArs = null;
 const REGION_PIN_GROUP_ID = 'region-pin-group';
 
 // Pin appearance — taz red to match the design system
-const PIN_COLOR = '#d50d2e';
+const PIN_FILL_COLOR = '#ffffff';
+const PIN_STROKE_COLOR = '#1f1f1f';
+const PIN_STROKE_WIDTH = 2;
 const PIN_DOT_RADIUS = 5;
 
 // Pulse ring starts at the same size as the dot and expands outward
@@ -350,7 +352,6 @@ const PIN_PULSE_RADIUS_END = PIN_DOT_RADIUS * 4;
 
 // Duration of one pulse cycle in milliseconds
 const PIN_PULSE_DURATION_MS = 1500;
-
 
 function collectAllArcCoordinates(geometry) {
   // Collect every coordinate point from every arc in the geometry so we
@@ -456,8 +457,8 @@ function buildPinGroup(svgX, svgY) {
   pulseRing.setAttribute('cy', svgY);
   pulseRing.setAttribute('r', PIN_PULSE_RADIUS_START);
   pulseRing.setAttribute('fill', 'none');
-  pulseRing.setAttribute('stroke', PIN_COLOR);
-  pulseRing.setAttribute('stroke-width', '2');
+  pulseRing.setAttribute('stroke', PIN_STROKE_COLOR);
+  pulseRing.setAttribute('stroke-width', PIN_STROKE_WIDTH);
   pulseRing.setAttribute('opacity', '0.6');
 
   const [animateRadius, animateOpacity] = buildPinPulseAnimation(
@@ -472,8 +473,9 @@ function buildPinGroup(svgX, svgY) {
   const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
   dot.setAttribute('cx', svgX);
   dot.setAttribute('cy', svgY);
-  dot.setAttribute('r', PIN_DOT_RADIUS);
-  dot.setAttribute('fill', PIN_COLOR);
+  dot.setAttribute('fill', PIN_FILL_COLOR);
+  dot.setAttribute('stroke', PIN_STROKE_COLOR);
+  dot.setAttribute('stroke-width', PIN_STROKE_WIDTH);
 
   group.appendChild(pulseRing);
   group.appendChild(dot);
