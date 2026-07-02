@@ -340,18 +340,19 @@ let currentPinArs = null;
 // ID used to find and remove the pin group from the shadow DOM SVG
 const REGION_PIN_GROUP_ID = 'region-pin-group';
 
-// Pin appearance — taz red to match the design system
-const PIN_FILL_COLOR = '#ffffff';
+// Pin appearance — dark charcoal stroke on white, readable across the full
+// blue-white-red gradient of the choropleth
 const PIN_STROKE_COLOR = '#1f1f1f';
 const PIN_STROKE_WIDTH = 2;
 const PIN_DOT_RADIUS = 5;
 
-// Pulse ring starts at the same size as the dot and expands outward
+// Pulse ring starts at the dot radius and expands outward
 const PIN_PULSE_RADIUS_START = PIN_DOT_RADIUS;
 const PIN_PULSE_RADIUS_END = PIN_DOT_RADIUS * 4;
 
 // Duration of one pulse cycle in milliseconds
 const PIN_PULSE_DURATION_MS = 1500;
+
 
 function collectAllArcCoordinates(geometry) {
   // Collect every coordinate point from every arc in the geometry so we
@@ -446,12 +447,12 @@ function buildPinPulseAnimation(radiusStart, radiusEnd, durationMs) {
 
 
 function buildPinGroup(svgX, svgY) {
-  // Build the full pin marker: a pulsing outer ring plus a solid centre dot.
-  // Both are appended to a <g> group so they can be removed together.
+  // Build the pin marker as a pulse ring only — no solid dot.
+  // The ring expands outward and fades, drawing attention without
+  // obscuring the map colour underneath.
   const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   group.setAttribute('id', REGION_PIN_GROUP_ID);
 
-  // Outer pulse ring — starts at dot size, expands and fades via SVG animation
   const pulseRing = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
   pulseRing.setAttribute('cx', svgX);
   pulseRing.setAttribute('cy', svgY);
@@ -469,16 +470,7 @@ function buildPinGroup(svgX, svgY) {
   pulseRing.appendChild(animateRadius);
   pulseRing.appendChild(animateOpacity);
 
-  // Solid centre dot — always visible, sits on top of the pulse ring
-  const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-  dot.setAttribute('cx', svgX);
-  dot.setAttribute('cy', svgY);
-  dot.setAttribute('fill', PIN_FILL_COLOR);
-  dot.setAttribute('stroke', PIN_STROKE_COLOR);
-  dot.setAttribute('stroke-width', PIN_STROKE_WIDTH);
-
   group.appendChild(pulseRing);
-  group.appendChild(dot);
 
   return group;
 }
@@ -734,8 +726,8 @@ function setupTooltipObserver() {
         showInfoBox(regionData.name, regionData.tooltip);
         updateHoverOutline(regionData.ars);
         updateRegionPin(regionData.ars);
-        search.value = regionData.name;  // ADD: keep search field in sync with hovered region
-        list.innerHTML = "";              // ADD: clear any open autocomplete dropdown
+        search.value = regionData.name;  // keep search field in sync with hovered region
+        list.innerHTML = "";             // clear any open autocomplete dropdown
       } else {
         log("⚠️ No CSV match for: " + regionName);
       }
