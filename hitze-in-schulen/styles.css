@@ -164,6 +164,11 @@ body {
   height: 625px;
 }
 
+#chart-container datawrapper-visualization {
+  width: 100% !important;
+  height: 100% !important;
+}
+
 /* ── Debug panel ──────────────────────────────────────────────────────────────
    Scrollable pre-formatted log output for development. Hidden by default —
    the Toggle Debug button in HTML adds/removes the .hidden class. */
