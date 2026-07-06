@@ -160,8 +160,11 @@ body {
 /* ── Try different values here to find the best desktop fit ── */
 #chart-container {
   position: relative;
-  width: 500px;
-  height: 625px;
+  width: 400px;
+  height: 653px;
+  margin-left: auto;
+  margin-right: auto;
+
 }
 
 #chart-container datawrapper-visualization {
