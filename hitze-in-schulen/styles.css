@@ -9,12 +9,15 @@
 
 /* ── Page layout ──────────────────────────────────────────────────────────────
    Override taz.de's grey body background — this is an embedded widget,
-   not a full page. max-width keeps the layout readable on wide screens. */
+   not a full page. margin: auto centers the body in the viewport.
+   max-width keeps the layout readable on wide screens.
+   padding provides horizontal spacing instead of margin so that
+   margin: auto can center the body correctly. */
 body {
-  margin: 20px auto;  /* auto on left/right centers the body itself */
+  margin: 20px auto;
   max-width: 900px;
   background: #fff;
-  padding: 0 20px;    /* horizontal spacing becomes padding, not margin */
+  padding: 0 20px;
 }
 
 
@@ -150,51 +153,27 @@ body {
 /* ── Chart container ──────────────────────────────────────────────────────────
    Width and height are fixed to match Datawrapper's preview dimensions.
    Datawrapper derives height from width for choropleth maps, so both must
-   be set explicitly. Adjust the width value to find the best fit, then
-   update the height to match what Datawrapper shows at that width.
+   be set explicitly. margin: auto centers the fixed-width container within
+   the page body.
 
    Measured preview dimensions:
      320px wide → 548px tall
      400px wide → 653px tall
-     600px wide → 799px tall */
+     600px wide → 799px tall
 
-/* ── Try different values here to find the best desktop fit ── */
+   Adjust the width to find the best fit per breakpoint, then update the
+   height to the corresponding measured value above. */
 #chart-container {
   position: relative;
   width: 400px;
   height: 653px;
   margin-left: auto;
   margin-right: auto;
-
-}
-
-#chart-container datawrapper-visualization {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-/* ── Debug panel ──────────────────────────────────────────────────────────────
-   Scrollable pre-formatted log output for development. Hidden by default —
-   the Toggle Debug button in HTML adds/removes the .hidden class. */
-#debug {
-  background: #f0f0f0;
-  border: 1px solid #e3e3e3;
-  padding: 12px;
-  font-family: monospace;
-  font-size: 11px;
-  white-space: pre-wrap;
-  max-height: 150px;
-  overflow-y: auto;
-}
-
-#debug.hidden {
-  display: none;
 }
 
 
 /* =============================================================================
    BREAKPOINT: 768px — tablet
-   Reduce body margin. Chart height reduced to leave room for content above.
    ============================================================================= */
 @media screen and (max-width: 768px) {
   body {
@@ -202,18 +181,17 @@ body {
     padding: 0 15px;
   }
 
-
   #chart-container {
-     width: 500px;
-     height: 625px;
+    width: 500px;
+    height: 625px;
   }
 }
 
 
 /* =============================================================================
    BREAKPOINT: 480px — mobile
-   Body margin reduces further. Search frame stretches to full page width.
-   Info box padding reduces to save vertical space. Chart height reduced.
+   Search frame stretches to full page width.
+   Info box padding reduces to save vertical space.
    ============================================================================= */
 @media screen and (max-width: 480px) {
   body {
