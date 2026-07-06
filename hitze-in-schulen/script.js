@@ -50,13 +50,7 @@ const searchButton = document.getElementById("search-button");
 
 function log(msg) {
   console.log(msg);
-  debugEl.textContent += msg + "\n";
-  debugEl.scrollTop = debugEl.scrollHeight;
 }
-
-toggleDebugBtn.addEventListener("click", () => debugEl.classList.toggle("hidden"));
-clearInfoBtn.addEventListener("click", clearInfoBox);
-
 
 // ─── CSV PARSING ──────────────────────────────────────────────────────────────
 
