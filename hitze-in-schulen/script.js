@@ -6,8 +6,8 @@ let geometryByARS = {};
 let geoPathGenerator = null;
 let shadowRoot = null;
 let hoverOutlineElement = null;
+let nativeTooltipElement = null;
 let currentPinArs = null;
-let tooltipObserver = null;
 
 
 // ─── CONFIGURATION ────────────────────────────────────────────────────────────
@@ -394,35 +394,23 @@ function buildPinGroup(svgX, svgY) {
 function updateRegionPin(ars) {
   clearRegionPin();
 
-  if (!geoPathGenerator) {
-    log("⚠️ Cannot place pin — path generator not ready");
-    return;
-  }
+  if (!geoPathGenerator) return;
 
   const geometry = geometryByARS[ars];
-  if (!geometry) {
-    log("⚠️ Cannot place pin — no geometry for ARS: " + ars);
-    return;
-  }
+  if (!geometry) return;
 
   const centroid = computeGeometryCentroid(geometry);
-  if (!centroid) {
-    log("⚠️ Cannot place pin — centroid failed for ARS: " + ars);
-    return;
-  }
+  if (!centroid) return;
 
   const svgX = centroid.x * geoPathGenerator.scaleX + geoPathGenerator.translateX;
   const svgY = centroid.y * geoPathGenerator.scaleY + geoPathGenerator.translateY;
 
   const svg = shadowRoot.querySelector('svg.svg-main');
-  if (!svg) {
-    log("⚠️ Cannot place pin — SVG not found");
-    return;
-  }
+  if (!svg) return;
 
   svg.appendChild(buildPinGroup(svgX, svgY));
   currentPinArs = ars;
-  log(`✅ Pin placed at (${svgX.toFixed(1)}, ${svgY.toFixed(1)}) for ARS: ${ars}`);
+  log(`✅ Pin at (${svgX.toFixed(1)}, ${svgY.toFixed(1)}) for ARS: ${ars}`);
 }
 
 function clearRegionPin() {
@@ -469,6 +457,43 @@ function clearHoverOutline() {
 }
 
 
+// ─── NATIVE TOOLTIP SUPPRESSION ───────────────────────────────────────────────
+// Datawrapper's native tooltip must be hidden on both desktop and mobile since
+// we display the data ourselves in the info box. The datawrapper.on API does
+// not suppress it automatically — we still need to find and hide it via the
+// shadow DOM. On desktop this happens as soon as the component loads. On mobile
+// the tooltip element may not exist until the first tap, so we also check after
+// each region.mouseenter event.
+
+function hideNativeTooltip() {
+  if (!shadowRoot) return;
+
+  // The tooltip element is .dw-tooltip inside the shadow root
+  const tooltip = shadowRoot.querySelector('.dw-tooltip');
+
+  if (!tooltip) {
+    log("⚠️ Native tooltip element not found yet");
+    return;
+  }
+
+  tooltip.style.setProperty('opacity', '0', 'important');
+  tooltip.style.setProperty('visibility', 'hidden', 'important');
+  tooltip.style.setProperty('pointer-events', 'none', 'important');
+  tooltip.style.setProperty('position', 'absolute', 'important');
+  tooltip.style.setProperty('left', '-9999px', 'important');
+
+  nativeTooltipElement = tooltip;
+  log("✅ Native tooltip hidden");
+}
+
+function ensureNativeTooltipHidden() {
+  // Called after each region selection in case the tooltip element was
+  // created after our initial hide attempt (common on mobile first tap)
+  if (nativeTooltipElement) return;
+  hideNativeTooltip();
+}
+
+
 // ─── INFO BOX ─────────────────────────────────────────────────────────────────
 
 function showInfoBox(name, tooltipHtml) {
@@ -486,11 +511,9 @@ function clearInfoBox() {
 }
 
 
-// ─── REGION SELECTION (shared by events API and search) ───────────────────────
+// ─── REGION SELECTION ─────────────────────────────────────────────────────────
 
 function selectRegionByName(regionName) {
-  // Look up by name from our CSV data — used by both the Datawrapper
-  // events API (which gives us the region name) and the search field
   const regionData = regionTooltips[regionName.toLowerCase()];
 
   if (regionData) {
@@ -499,14 +522,15 @@ function selectRegionByName(regionName) {
     updateRegionPin(regionData.ars);
     search.value = regionData.name;
     list.innerHTML = "";
+    // Re-check tooltip suppression — on mobile the element may appear
+    // only after the first interaction
+    ensureNativeTooltipHidden();
   } else {
     log("⚠️ No CSV match for: " + regionName);
   }
 }
 
 function selectRegionFromSearch(regionName) {
-  // Called from the search field — same logic but shows fallback message
-  // when the typed name doesn't exactly match a region in our data
   const regionData = regionTooltips[regionName.toLowerCase()];
 
   if (regionData) {
@@ -520,8 +544,6 @@ function selectRegionFromSearch(regionName) {
 
 
 // ─── DATAWRAPPER EVENTS API ───────────────────────────────────────────────────
-// region.mouseenter fires on both desktop hover and mobile touch tap,
-// replacing the previous MutationObserver approach entirely.
 
 datawrapper.on('region.mouseenter', ({ chartId, data }) => {
   if (chartId !== CHART_ID) return;
@@ -531,9 +553,9 @@ datawrapper.on('region.mouseenter', ({ chartId, data }) => {
 
 datawrapper.on('region.mouseleave', ({ chartId }) => {
   if (chartId !== CHART_ID) return;
-  // Only clear outline and pin on desktop — on mobile the sticky tooltip
-  // stays visible until the user taps elsewhere, so we leave the selection
-  // in place to match what they tapped on
+
+  // On touch devices the region stays selected after tap until the user
+  // taps elsewhere — don't clear on mouseleave for touch
   const isTouchDevice = window.matchMedia('(hover: none)').matches;
   if (!isTouchDevice) {
     clearHoverOutline();
@@ -553,11 +575,17 @@ function waitForChart() {
 
     loadFromChartData();
 
-    // Get hover outline element and set up resize observer
     hoverOutlineElement = shadowRoot.querySelector('.hover-outline');
     if (hoverOutlineElement) {
       log("✅ Found hover-outline element");
     }
+
+    // Attempt to hide tooltip immediately — it may already exist on desktop
+    hideNativeTooltip();
+
+    // On desktop the tooltip element exists from the start; on mobile it may
+    // not be present until first interaction. Watch for it being added.
+    observeForNativeTooltip();
 
     observeResizeForPathGenerator();
   } else {
@@ -566,6 +594,23 @@ function waitForChart() {
 }
 
 setTimeout(waitForChart, 500);
+
+function observeForNativeTooltip() {
+  // If the tooltip element doesn't exist yet (common on mobile), watch the
+  // shadow root for it being added and hide it immediately when it appears
+  if (nativeTooltipElement) return;
+
+  const observer = new MutationObserver(() => {
+    const tooltip = shadowRoot.querySelector('.dw-tooltip');
+    if (tooltip) {
+      observer.disconnect();
+      hideNativeTooltip();
+    }
+  });
+
+  observer.observe(shadowRoot, { childList: true, subtree: true });
+  log("👀 Watching shadow DOM for native tooltip element");
+}
 
 function observeResizeForPathGenerator() {
   const svg = shadowRoot.querySelector('svg.svg-main');
