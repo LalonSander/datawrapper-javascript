@@ -571,15 +571,6 @@ function showInfoBox(name, tooltipHtml) {
   infoBox.classList.add('has-content');
 }
 
-function clearInfoBox() {
-  infoName.textContent = '';
-  infoData.innerHTML = '';
-  infoBox.classList.remove('has-content');
-  clearHoverOutline();
-  clearRegionPin();
-}
-
-
 // ─── SEARCH ───────────────────────────────────────────────────────────────────
 
 function selectRegionFromSearch(regionName) {
