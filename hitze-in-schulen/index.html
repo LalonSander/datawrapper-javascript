@@ -2,22 +2,30 @@
 <html>
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wie oft ist es in deiner Gemeinde zu heiß zum Lernen?</title>
 
-  <!-- taz.de design system stylesheet — provides typography, colour tokens, spacing utilities -->
   <link rel="stylesheet" href="https://taz.de/lib/taz-verlag-node/css/styles__news.min.css">
 
   <style>
-    /* ── Page layout ──
-       Override taz.de's grey body background since this is an embedded widget */
+
+    /* ── CSS custom properties for the chrome height calculation ──────────────
+       These track the heights of everything above and below the chart so we
+       can give the chart exactly the remaining viewport space.
+       Values are updated at each breakpoint. */
+    :root {
+      --body-margin-v: 20px;      /* top + bottom body margin (each side) */
+      --chrome-height: 260px;     /* h1 + search + infobox + spacing above chart */
+    }
+
+    /* ── Page layout ── */
     body {
-      margin: 20px;
+      margin: var(--body-margin-v) 20px;
       max-width: 900px;
       background: #fff;
     }
 
-    /* ── Search frame ──
-       Fixed dimensions and gap from Figma spec — no equivalent taz utility exists */
+    /* ── Search frame ── */
     .search-frame {
       position: relative;
       display: inline-flex;
@@ -27,9 +35,7 @@
       gap: 10px;
     }
 
-    /* ── Search input ──
-       Width/height are Figma-spec values with no taz utility equivalent.
-       Typography and colour come from taz classes applied in HTML. */
+    /* ── Search input ── */
     #search {
       width: 291px;
       height: 50px;
@@ -39,11 +45,7 @@
       box-sizing: border-box;
     }
 
-    /* ── Search button ──
-       Exact dimensions, background states and pointer reset are structural —
-       no taz utility covers a fixed-size dark icon button with hover colour swap.
-       The taz stylesheet resets button { background: transparent } globally,
-       so we must explicitly restore the background here. */
+    /* ── Search button ── */
     #search-button {
       width: 50px;
       height: 50px;
@@ -57,7 +59,6 @@
       flex-shrink: 0;
     }
     #search-button:hover {
-      /* .has-background-tzi-hover value from taz stylesheet */
       background: #ad0924;
     }
     #search-button svg {
@@ -65,9 +66,7 @@
       height: 22px;
     }
 
-    /* ── Autocomplete dropdown ──
-       Absolute positioning, z-index, fixed width, and scroll behaviour
-       are structural — no taz utility covers this pattern */
+    /* ── Autocomplete dropdown ── */
     #autocomplete-list {
       position: absolute;
       top: 100%;
@@ -76,13 +75,11 @@
       max-height: 250px;
       overflow-y: auto;
       z-index: 9999;
-      /* taz colour tokens for border and shadow */
       border: 1px solid #a6a6a6;
       background: #fff;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
     #autocomplete-list div {
-      /* taz colour tokens — typography applied via class in JS-generated divs below */
       border-bottom: 1px solid #e3e3e3;
       color: #1f1f1f;
       padding: 10px 15px;
@@ -91,18 +88,14 @@
       border-bottom: none;
     }
     #autocomplete-list div:hover {
-      /* taz highlighted background + primary text colour */
       background: #fceef0;
       color: #d50d2e;
     }
     #autocomplete-list:empty {
-      border: none;
+      display: none;
     }
 
-    /* ── Info box ──
-       The has-content state toggle (showing/hiding placeholder vs content)
-       is the only reason custom CSS is needed here — the colours and
-       spacing are all taz tokens applied as utilities in the HTML */
+    /* ── Info box ── */
     #info-box .content {
       display: none;
       width: 100%;
@@ -117,16 +110,22 @@
       border-color: #d50d2e;
     }
 
-    /* ── Chart container ── */
+    /* ── Chart container ──
+       Height = full viewport minus body margins (top+bottom) minus all chrome.
+       dvh is used so mobile browser chrome (address bar) is excluded.
+       The !important overrides Datawrapper's own inline height on the component. */
     #chart-container {
-      min-height: 500px;
       position: relative;
+      height: calc(100dvh - (var(--body-margin-v) * 2) - var(--chrome-height));
+      min-height: 300px;
+    }
+    #chart-container datawrapper-visualization,
+    #chart-container > div {
+      height: 100% !important;
     }
 
-    /* ── Debug panel ──
-       Scrollable pre-formatted log panel — no taz equivalent */
+    /* ── Debug panel ── */
     #debug {
-      /* taz colour tokens */
       background: #f0f0f0;
       border: 1px solid #e3e3e3;
       padding: 12px;
@@ -139,31 +138,76 @@
     #debug.hidden {
       display: none;
     }
+
+
+    /* ════════════════════════════════════════════════════════════════════════
+       BREAKPOINT: tablet — 769px to 768px
+       Minor adjustments only, layout stays the same
+    ════════════════════════════════════════════════════════════════════════ */
+    @media screen and (max-width: 768px) {
+      :root {
+        --body-margin-v: 15px;
+        /* h1 wraps at this width, so chrome is slightly taller */
+        --chrome-height: 290px;
+      }
+
+      body {
+        margin: var(--body-margin-v) 15px;
+      }
+    }
+
+
+    /* ════════════════════════════════════════════════════════════════════════
+       BREAKPOINT: mobile — up to 480px
+       Search field stretches to full width, margins reduce further
+    ════════════════════════════════════════════════════════════════════════ */
+    @media screen and (max-width: 480px) {
+      :root {
+        --body-margin-v: 10px;
+        /* Less h1 text fits per line at narrow width, so chrome grows.
+           Info box also loses its padding benefit at this size. */
+        --chrome-height: 320px;
+      }
+
+      body {
+        margin: var(--body-margin-v) 10px;
+      }
+
+      /* Search frame stretches to fill available width */
+      .search-frame {
+        width: 100%;
+        display: flex;
+      }
+
+      /* Input takes all remaining space after the fixed-width button */
+      #search {
+        width: calc(100% - 50px - 10px); /* full width minus button minus gap */
+        flex: 1;
+      }
+
+      /* Autocomplete dropdown matches the full-width search frame */
+      #autocomplete-list {
+        width: 100%;
+      }
+
+      /* Info box padding reduces to save vertical space */
+      #info-box {
+        padding: 12px !important;
+      }
+    }
+
   </style>
 </head>
 <body>
-  <!-- typo-head-small: AktivGrotesk_Bd, 1.5rem, line-height 110% -->
   <h1 class="typo-r-head-extrasmall mgb-medium">Wie oft ist es in deiner Gemeinde zu heiß zum Lernen?</h1>
 
-  <!-- search-frame: custom dimensions from Figma spec -->
   <div class="search-frame mgb-medium">
-    <!--
-      typo-form-input-entry: AktivGrotesk_Rg, 1.062rem, line-height 130%
-      ph-gap: 15px horizontal padding
-      has-text-text: color #1f1f1f
-      has-background-white: background #fff
-    -->
     <input
       id="search"
       class="typo-form-input-entry has-text-text has-background-white ph-gap"
       placeholder="Ortsname"
       autocomplete="off"
     />
-
-    <!--
-      is-clickable: cursor pointer
-      Background and dimensions are custom (no taz utility covers this pattern)
-    -->
     <button id="search-button" class="is-clickable" type="button" aria-label="Suchen">
       <svg width="23" height="23" viewBox="0 0 23 23" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M21.9266 20.7984L17.5066 16.3783C19.0431 14.5928 19.8856 12.3139 19.88 9.95835C19.8842 7.69227 19.1139 5.4927 17.6969 3.7243C16.2799 1.95591 14.3012 0.724888 12.0887 0.235047C9.87614 -0.254795 7.56267 0.0259376 5.53163 1.03094C3.50059 2.03595 1.87393 3.70484 0.921196 5.76092C-0.0315329 7.81701 -0.253128 10.1369 0.293144 12.3361C0.839417 14.5354 2.12076 16.482 3.92482 17.8534C5.72888 19.2247 7.94734 19.9385 10.2126 19.8763C12.4778 19.8142 14.6538 18.9799 16.38 17.5117L20.8 21.925C20.9498 22.0736 21.1523 22.1569 21.3633 22.1569C21.5743 22.1569 21.7768 22.0736 21.9266 21.925C22.001 21.8512 22.0601 21.7635 22.1004 21.6668C22.1406 21.5702 22.1614 21.4664 22.1614 21.3617C22.1614 21.2569 22.1406 21.1532 22.1004 21.0565C22.0601 20.9598 22.001 20.8721 21.9266 20.7984ZM1.62666 9.95835C1.62519 8.58978 1.96106 7.24188 2.60459 6.03404C3.24811 4.82619 4.17945 3.79556 5.31615 3.03339C6.45286 2.27122 7.7599 1.8011 9.12163 1.66441C10.4834 1.52771 11.8578 1.72867 13.1233 2.2497C14.3888 2.77072 15.5064 3.59572 16.3772 4.65155C17.2479 5.70739 17.845 6.96152 18.1156 8.30308C18.3862 9.64464 18.3219 11.0323 17.9285 12.3431C17.5351 13.6539 16.8246 14.8476 15.86 15.8184C14.6922 16.9726 13.2092 17.7558 11.5975 18.0695C9.98574 18.3832 8.31724 18.2134 6.80177 17.5814C5.2863 16.9494 3.99151 15.8834 3.08019 14.5176C2.16888 13.1517 1.68172 11.5469 1.67999 9.90497L1.62666 9.95835Z" fill="white"/>
@@ -172,37 +216,21 @@
     <div id="autocomplete-list"></div>
   </div>
 
-  <!--
-    Info box:
-      has-background-form: #ebebeb background
-      p-medium: 20px padding
-      has-border-top repurposed — we use inline border style instead since
-      taz only has border-top utilities, not full-border
-  -->
-  <div id="info-box" class="has-background-form p-medium mgb-medium" style="border: 1px solid #e3e3e3; min-height: 80px; display: flex; align-items: center; transition: border-color 0.2s ease;">
-    <!--
-      placeholder: has-text-text-disabled (#a6a6a6), typo-short-text for size
-    -->
+  <div id="info-box" class="has-background-form p-medium mgb-medium" style="border: 1px solid #e3e3e3; display: flex; align-items: center; transition: border-color 0.2s ease;">
     <div class="placeholder typo-short-text has-text-text-disabled">
       👆 Suche nach einer Gemeinde oder wähle sie in der Karte aus
     </div>
     <div class="content">
-      <!--
-        Region name: typo-head-xxs (AktivGrotesk_Bd, 1.125rem)
-        Region data: typo-short-text (AktivGrotesk_Rg, 1.031rem)
-      -->
       <div class="region-name typo-head-xxs has-text-text mgb-xsmall" id="info-name"></div>
       <div class="region-data typo-short-text has-text-text" id="info-data"></div>
     </div>
   </div>
 
-  <!-- Datawrapper Web Component Embed -->
   <div id="chart-container" class="mgb-medium">
     <script type="text/javascript" defer src="https://datawrapper.dwcdn.net/eC2gr/embed.js" charset="utf-8"></script>
     <noscript><img src="https://datawrapper.dwcdn.net/eC2gr/full.png" alt="" /></noscript>
   </div>
 
-  <!-- Debug controls — using taz secondary-button border style -->
   <div class="mgb-medium">
     <button id="toggle-debug" class="secondary-button typo-button-text-small-reg ph-small pv-xxsmall is-clickable">Toggle Debug</button>
     <button id="clear-info" class="secondary-button typo-button-text-small-reg ph-small pv-xxsmall is-clickable">Clear Info Box</button>
