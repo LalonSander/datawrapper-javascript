@@ -652,8 +652,6 @@ function waitForChart() {
   }
 }
 
-setTimeout(waitForChart, 500);
-
 function observeResizeForPathGenerator() {
   const svg = shadowRoot.querySelector('svg.svg-main');
   if (!svg) return;
