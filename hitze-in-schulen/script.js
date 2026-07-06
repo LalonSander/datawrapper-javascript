@@ -1,6 +1,26 @@
-// --- TOOLTIP DATA (loaded via Performance API after Datawrapper fetches dataset.csv) ---
+// --- TOOLTIP DATA ---
 let regionTooltips = {};  // name (lowercase) -> { name, ars, tooltip }
 let regionNames = [];
+
+// --- MAP DATA ---
+let mapData = null;
+let geometryByARS = {};
+let geoPathGenerator = null;
+
+// --- DATAWRAPPER COMPONENT ---
+let dwComponent = null;
+let shadowRoot = null;
+let tooltipElement = null;
+let hoverOutlineElement = null;
+
+// --- REGION PIN STATE ---
+let currentPinArs = null;
+
+// --- TOOLTIP OBSERVER ---
+let tooltipObserver = null;
+
+
+// ─── CONFIGURATION ───────────────────────────────────────────────────────────
 
 // Chart ID matching the Datawrapper embed — used to read from window.datawrapper.chartData
 const CHART_ID = 'eC2gr';
@@ -8,6 +28,95 @@ const CHART_ID = 'eC2gr';
 // Maximum time to wait for window.datawrapper.chartData to be populated
 const CHART_DATA_POLL_TIMEOUT_MS = 10000;
 const CHART_DATA_POLL_INTERVAL_MS = 300;
+
+// Fallback Performance API patterns — used if chartData polling times out
+const BASEMAP_URL_PATTERN = 'datawrapper.dwcdn.net/lib/basemaps/germany-gemeinde';
+const DATASET_URL_PATTERN = 'dataset.csv';
+const BASEMAP_POLL_TIMEOUT_MS = 10000;
+const BASEMAP_POLL_INTERVAL_MS = 300;
+const DATASET_POLL_TIMEOUT_MS = 10000;
+const DATASET_POLL_INTERVAL_MS = 300;
+
+// ID used to find and remove the pin group from the shadow DOM SVG
+const REGION_PIN_GROUP_ID = 'region-pin-group';
+
+// Pin appearance — dark charcoal stroke, readable across the full
+// blue-white-red gradient of the choropleth
+const PIN_STROKE_COLOR = '#1f1f1f';
+const PIN_STROKE_WIDTH = 2;
+const PIN_DOT_RADIUS = 5;
+const PIN_PULSE_RADIUS_START = PIN_DOT_RADIUS;
+const PIN_PULSE_RADIUS_END = PIN_DOT_RADIUS * 4;
+const PIN_PULSE_DURATION_MS = 1500;
+
+
+// ─── CSV PARSING ─────────────────────────────────────────────────────────────
+
+function parseCSVLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+
+  return result;
+}
+
+function parseDatasetCSV(csvText) {
+  const lines = csvText.trim().split('\n');
+
+  // First line is the header row — find column indices by name so we're
+  // not dependent on column order
+  const headerCols = parseCSVLine(lines[0]);
+  const nameColumnIndex = headerCols.indexOf('region');
+  const agsColumnIndex = headerCols.indexOf('AGS');
+  const tooltipColumnIndex = headerCols.indexOf('tooltip');
+
+  if (nameColumnIndex === -1 || agsColumnIndex === -1 || tooltipColumnIndex === -1) {
+    log("❌ dataset.csv missing expected columns (region, AGS, tooltip). Found: " + headerCols.join(', '));
+    return;
+  }
+
+  const dataLines = lines.slice(1);
+
+  dataLines.forEach(line => {
+    const cols = parseCSVLine(line);
+    const name = cols[nameColumnIndex];
+    const ags = cols[agsColumnIndex];
+    const tooltip = cols[tooltipColumnIndex];
+
+    if (name && ags && tooltip) {
+      regionTooltips[name.toLowerCase()] = { name, ars: ags, tooltip };
+      regionNames.push(name);
+    }
+  });
+
+  log("✅ Loaded " + regionNames.length + " regions with tooltips from dataset.csv");
+}
+
+function loadDatasetFromUrl(datasetUrl) {
+  log("📡 Fetching dataset from: " + datasetUrl);
+
+  fetch(datasetUrl)
+    .then(r => r.text())
+    .then(text => parseDatasetCSV(text))
+    .catch(err => log("❌ dataset.csv fetch error: " + err));
+}
+
+
+// ─── CHART DATA LOADING (primary method) ─────────────────────────────────────
 
 function extractBasemapUrlFromChartData(chartData) {
   // The assets block contains the basemap filename with its content hash,
@@ -25,7 +134,7 @@ function extractBasemapUrlFromChartData(chartData) {
   const chartPublicUrl = chartData.chart.publicUrl;
 
   // The relative URL starts with ../../ from the chart's public URL directory,
-  // so we resolve it from the chart base rather than the page origin
+  // so we resolve it against the chart base rather than the page origin
   const chartBase = chartPublicUrl.replace(/\/[^/]+\/?$/, '/');
   const resolvedUrl = new URL(relativeUrl, chartBase).href;
 
@@ -33,9 +142,8 @@ function extractBasemapUrlFromChartData(chartData) {
   return resolvedUrl;
 }
 
-
 function extractDatasetUrlFromChartData(chartData) {
-  // The dataset.csv URL in the assets block is just "dataset.csv" —
+  // dataset.csv URL in the assets block is just "dataset.csv" —
   // a relative path resolved against the chart's public URL
   const assets = chartData.assets;
 
@@ -52,10 +160,10 @@ function extractDatasetUrlFromChartData(chartData) {
   return resolvedUrl;
 }
 
-
 function loadFromChartData() {
   // window.datawrapper.chartData[CHART_ID] is a Promise set by embed.js.
-  // We poll until it exists, then resolve it to get the full chart config.
+  // We poll until it exists, then resolve it to get the full chart config
+  // which contains the hashed basemap URL and dataset URL directly.
   const startTime = Date.now();
 
   function attempt() {
@@ -96,6 +204,101 @@ function loadFromChartData() {
   attempt();
 }
 
+
+// ─── PERFORMANCE API FALLBACK ─────────────────────────────────────────────────
+
+function findBasemapUrlFromPerformanceEntries() {
+  const resourceEntries = performance.getEntriesByType('resource');
+
+  for (const entry of resourceEntries) {
+    if (entry.name.includes(BASEMAP_URL_PATTERN)) {
+      return entry.name;
+    }
+  }
+
+  return null;
+}
+
+function pollForBasemapUrl() {
+  const startTime = Date.now();
+
+  function attempt() {
+    const basemapUrl = findBasemapUrlFromPerformanceEntries();
+
+    if (basemapUrl) {
+      loadMapDataFromBasemapUrl(basemapUrl);
+      return;
+    }
+
+    const elapsedMs = Date.now() - startTime;
+
+    if (elapsedMs >= BASEMAP_POLL_TIMEOUT_MS) {
+      log("❌ Timed out waiting for basemap resource in performance entries");
+      return;
+    }
+
+    setTimeout(attempt, BASEMAP_POLL_INTERVAL_MS);
+  }
+
+  attempt();
+}
+
+function findDatasetUrlFromPerformanceEntries() {
+  const resourceEntries = performance.getEntriesByType('resource');
+
+  for (const entry of resourceEntries) {
+    if (entry.name.includes(DATASET_URL_PATTERN)) {
+      return entry.name;
+    }
+  }
+
+  return null;
+}
+
+function pollForDatasetUrl() {
+  const startTime = Date.now();
+
+  function attempt() {
+    const datasetUrl = findDatasetUrlFromPerformanceEntries();
+
+    if (datasetUrl) {
+      loadDatasetFromUrl(datasetUrl);
+      return;
+    }
+
+    const elapsedMs = Date.now() - startTime;
+
+    if (elapsedMs >= DATASET_POLL_TIMEOUT_MS) {
+      log("❌ Timed out waiting for dataset.csv resource in performance entries");
+      return;
+    }
+
+    setTimeout(attempt, DATASET_POLL_INTERVAL_MS);
+  }
+
+  attempt();
+}
+
+
+// ─── MAP DATA ─────────────────────────────────────────────────────────────────
+
+function loadMapDataFromBasemapUrl(basemapUrl) {
+  log("📡 Fetching basemap from: " + basemapUrl);
+
+  fetch(basemapUrl)
+    .then(r => r.json())
+    .then(data => {
+      mapData = data.content || data;
+      buildGeometryLookup();
+      log("✅ Loaded basemap");
+
+      if (shadowRoot) {
+        setupPathGenerator();
+      }
+    })
+    .catch(err => log("❌ Basemap fetch error: " + err));
+}
+
 function buildGeometryLookup() {
   if (!mapData || !mapData.objects || !mapData.objects.regions) return;
 
@@ -117,7 +320,8 @@ function buildGeometryLookup() {
 }
 
 
-// --- SETUP D3 PATH GENERATOR ---
+// ─── SVG PATH GENERATOR ───────────────────────────────────────────────────────
+
 function setupPathGenerator() {
   if (!shadowRoot || !mapData) return;
 
@@ -126,8 +330,6 @@ function setupPathGenerator() {
   const height = svg.getAttribute('height');
 
   log(`SVG dimensions: ${width} x ${height}`);
-  const { left } = svg.getBoundingClientRect();
-  console.log("SVG X offset from viewport:", left);
 
   const bbox = mapData.bbox;
   const bboxMinX = bbox[0];
@@ -138,10 +340,8 @@ function setupPathGenerator() {
   const bboxHeight = bboxMaxY - bboxMinY;
 
   log(`Map bbox: [${bbox.join(', ')}]`);
-  log(`Bbox size: ${bboxWidth.toFixed(4)} x ${bboxHeight.toFixed(4)}`);
 
   const scale = Math.min(width / bboxWidth, height / bboxHeight);
-
   const translateX = width / 2 - (bboxMinX + bboxWidth / 2) * scale;
   const translateY = height / 2 - (bboxMinY + bboxHeight / 2) * scale;
 
@@ -154,46 +354,12 @@ function setupPathGenerator() {
     translateY: translateY
   };
 
-  // If a pin is currently shown, reposition it since the transform has changed
+  // Reposition any active pin since the transform has changed
   if (currentPinArs) {
     updateRegionPin(currentPinArs);
   }
 }
 
-function getFirstPoint(ars) {
-  const geom = geometryByARS[ars];
-  if (!geom) return null;
-
-  const firstArc = geom.type === 'MultiPolygon' ? geom.arcs[0][0][0] : geom.arcs[0][0];
-  const arcIdx = firstArc < 0 ? ~firstArc : firstArc;
-  const coord = mapData.arcs[arcIdx][0];
-
-  return { x: coord[0], y: coord[1] };
-}
-
-function verifyTransform(ars, expectedX, expectedY, name) {
-  const geom = geometryByARS[ars];
-  if (!geom || !geoPathGenerator) return;
-
-  const firstArc = geom.type === 'MultiPolygon' ? geom.arcs[0][0][0] : geom.arcs[0][0];
-  const arcIdx = firstArc < 0 ? ~firstArc : firstArc;
-  const coord = mapData.arcs[arcIdx][0];
-
-  const calcX = coord[0] * geoPathGenerator.scaleX + geoPathGenerator.translateX;
-  const calcY = coord[1] * geoPathGenerator.scaleY + geoPathGenerator.translateY;
-
-  const diffX = Math.abs(calcX - expectedX);
-  const diffY = Math.abs(calcY - expectedY);
-
-  if (diffX < 1 && diffY < 1) {
-    log(`✅ ${name}: calc(${calcX.toFixed(2)}, ${calcY.toFixed(2)}) matches expected!`);
-  } else {
-    log(`⚠️ ${name}: calc(${calcX.toFixed(2)}, ${calcY.toFixed(2)}) vs expected(${expectedX}, ${expectedY}) - diff(${diffX.toFixed(2)}, ${diffY.toFixed(2)})`);
-  }
-}
-
-
-// --- CONVERT TOPOJSON GEOMETRY TO SVG PATH ---
 function geometryToPath(geometry, scaleX, scaleY, translateX, translateY) {
   if (!mapData || !mapData.arcs) return '';
 
@@ -258,32 +424,11 @@ function geometryToPath(geometry, scaleX, scaleY, translateX, translateY) {
 }
 
 
-// --- REGION PIN ---
-
-// Tracks which region currently has a pin so we can reposition it on resize
-let currentPinArs = null;
-
-// ID used to find and remove the pin group from the shadow DOM SVG
-const REGION_PIN_GROUP_ID = 'region-pin-group';
-
-// Pin appearance — dark charcoal stroke on white, readable across the full
-// blue-white-red gradient of the choropleth
-const PIN_STROKE_COLOR = '#1f1f1f';
-const PIN_STROKE_WIDTH = 2;
-const PIN_DOT_RADIUS = 5;
-
-// Pulse ring starts at the dot radius and expands outward
-const PIN_PULSE_RADIUS_START = PIN_DOT_RADIUS;
-const PIN_PULSE_RADIUS_END = PIN_DOT_RADIUS * 4;
-
-// Duration of one pulse cycle in milliseconds
-const PIN_PULSE_DURATION_MS = 1500;
-
+// ─── REGION PIN ───────────────────────────────────────────────────────────────
 
 function collectAllArcCoordinates(geometry) {
-  // Collect every coordinate point from every arc in the geometry so we
-  // can compute the mean centroid by averaging all of them.
-  // This is a rough but visually good centroid for placing a pin.
+  // Collect every coordinate point from every arc so we can compute
+  // the mean centroid by averaging all of them
   const allCoords = [];
 
   function collectFromRing(ring) {
@@ -315,10 +460,9 @@ function collectAllArcCoordinates(geometry) {
   return allCoords;
 }
 
-
 function computeGeometryCentroid(geometry) {
-  // Average all coordinate points in the geometry to find a mean centroid.
-  // Returns coordinates in TopoJSON space (before SVG transform is applied).
+  // Average all coordinate points to find a mean centroid.
+  // Returns coordinates in TopoJSON space (before SVG transform).
   const allCoords = collectAllArcCoordinates(geometry);
 
   if (allCoords.length === 0) {
@@ -333,27 +477,23 @@ function computeGeometryCentroid(geometry) {
     sumY += coord[1];
   }
 
-  const centroidX = sumX / allCoords.length;
-  const centroidY = sumY / allCoords.length;
-
-  return { x: centroidX, y: centroidY };
+  return {
+    x: sumX / allCoords.length,
+    y: sumY / allCoords.length
+  };
 }
-
 
 function convertCentroidToSvgCoords(centroid) {
-  // Apply the same transform used by geometryToPath to convert from
+  // Apply the same transform as geometryToPath to convert from
   // TopoJSON coordinate space into SVG pixel coordinates
-  const svgX = centroid.x * geoPathGenerator.scaleX + geoPathGenerator.translateX;
-  const svgY = centroid.y * geoPathGenerator.scaleY + geoPathGenerator.translateY;
-
-  return { x: svgX, y: svgY };
+  return {
+    x: centroid.x * geoPathGenerator.scaleX + geoPathGenerator.translateX,
+    y: centroid.y * geoPathGenerator.scaleY + geoPathGenerator.translateY
+  };
 }
 
-
 function buildPinPulseAnimation(radiusStart, radiusEnd, durationMs) {
-  // Build an SVG <animate> element that expands the pulse ring outward
-  // and fades it out, creating a ripple effect. Using SVG-native animation
-  // avoids needing to inject a <style> element into the shadow DOM.
+  // SVG-native animation avoids needing to inject a <style> into the shadow DOM
   const animateRadius = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
   animateRadius.setAttribute('attributeName', 'r');
   animateRadius.setAttribute('from', radiusStart);
@@ -371,11 +511,8 @@ function buildPinPulseAnimation(radiusStart, radiusEnd, durationMs) {
   return [animateRadius, animateOpacity];
 }
 
-
 function buildPinGroup(svgX, svgY) {
-  // Build the pin marker as a pulse ring only — no solid dot.
-  // The ring expands outward and fades, drawing attention without
-  // obscuring the map colour underneath.
+  // Pulse ring only — expands and fades without obscuring the map colour
   const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   group.setAttribute('id', REGION_PIN_GROUP_ID);
 
@@ -395,16 +532,12 @@ function buildPinGroup(svgX, svgY) {
   );
   pulseRing.appendChild(animateRadius);
   pulseRing.appendChild(animateOpacity);
-
   group.appendChild(pulseRing);
 
   return group;
 }
 
-
 function updateRegionPin(ars) {
-  // Remove any existing pin first, then place a new one at the centroid
-  // of the region identified by the given ARS/AGS code
   clearRegionPin();
 
   if (!geoPathGenerator) {
@@ -434,17 +567,12 @@ function updateRegionPin(ars) {
 
   const pinGroup = buildPinGroup(svgCoords.x, svgCoords.y);
   svg.appendChild(pinGroup);
-
-  // Remember which region has the pin so setupPathGenerator can reposition
-  // it if the SVG resizes and the transform changes
   currentPinArs = ars;
 
   log(`✅ Placed pin at SVG (${svgCoords.x.toFixed(1)}, ${svgCoords.y.toFixed(1)}) for ARS: ${ars}`);
 }
 
-
 function clearRegionPin() {
-  // Remove the pin group from the shadow DOM SVG if it exists
   if (!shadowRoot) return;
 
   const svg = shadowRoot.querySelector('svg.svg-main');
@@ -459,7 +587,8 @@ function clearRegionPin() {
 }
 
 
-// --- DOM ELEMENTS ---
+// ─── DOM ELEMENTS ─────────────────────────────────────────────────────────────
+
 const search = document.getElementById("search");
 const list = document.getElementById("autocomplete-list");
 const infoBox = document.getElementById("info-box");
@@ -468,9 +597,11 @@ const infoData = document.getElementById("info-data");
 const debugEl = document.getElementById("debug");
 const toggleDebugBtn = document.getElementById("toggle-debug");
 const clearInfoBtn = document.getElementById("clear-info");
+const searchButton = document.getElementById("search-button");
 
 
-// --- DEBUG LOGGING ---
+// ─── DEBUG LOGGING ────────────────────────────────────────────────────────────
+
 function log(msg) {
   console.log(msg);
   debugEl.textContent += msg + "\n";
@@ -481,14 +612,8 @@ toggleDebugBtn.addEventListener("click", () => debugEl.classList.toggle("hidden"
 clearInfoBtn.addEventListener("click", clearInfoBox);
 
 
-// --- DATAWRAPPER COMPONENT ---
-let dwComponent = null;
-let shadowRoot = null;
-let tooltipElement = null;
-let hoverOutlineElement = null;
+// ─── CHART INITIALISATION ─────────────────────────────────────────────────────
 
-
-// --- WAIT FOR CHART TO LOAD ---
 function waitForChart() {
   const component = document.querySelector('datawrapper-visualization');
 
@@ -497,8 +622,9 @@ function waitForChart() {
     shadowRoot = component.shadowRoot;
     log("✅ Found Datawrapper web component");
 
-    pollForBasemapUrl();
-    pollForDatasetUrl();
+    // Primary: read URLs directly from the chart data object set by embed.js
+    // Fallback: Performance API polling (triggered automatically on timeout)
+    loadFromChartData();
 
     setTimeout(setupTooltipInterception, 500);
   } else {
@@ -526,7 +652,8 @@ function observeResizeForPathGenerator() {
 }
 
 
-// --- SETUP TOOLTIP INTERCEPTION ---
+// ─── TOOLTIP INTERCEPTION ─────────────────────────────────────────────────────
+
 function setupTooltipInterception(retries = 10) {
   tooltipElement = shadowRoot.querySelector('dw-tooltip');
 
@@ -563,10 +690,18 @@ function setupTooltipInterception(retries = 10) {
   hideNativeTooltip();
 }
 
-
-// --- HIDE NATIVE TOOLTIP ---
 function hideNativeTooltip() {
   if (!tooltipElement) return;
+
+  // On touch devices, Datawrapper renders the tooltip as a sticky panel
+  // with a close button the user must tap to dismiss — hiding it entirely
+  // would leave them with no way to deselect a region
+  const isTouchDevice = window.matchMedia('(hover: none)').matches;
+
+  if (isTouchDevice) {
+    log("ℹ️ Touch device detected — leaving native tooltip visible for close button");
+    return;
+  }
 
   tooltipElement.style.cssText = `
     opacity: 0 !important;
@@ -579,8 +714,6 @@ function hideNativeTooltip() {
   log("✅ Native tooltip hidden");
 }
 
-
-// --- UPDATE HOVER OUTLINE FROM MAP DATA ---
 function updateHoverOutline(ars) {
   if (!hoverOutlineElement) {
     hoverOutlineElement = shadowRoot?.querySelector('.hover-outline');
@@ -620,17 +753,11 @@ function updateHoverOutline(ars) {
   }
 }
 
-
-// --- CLEAR HOVER OUTLINE ---
 function clearHoverOutline() {
   if (hoverOutlineElement) {
     hoverOutlineElement.setAttribute('d', '');
   }
 }
-
-
-// --- OBSERVE TOOLTIP FOR H2 CHANGES ---
-let tooltipObserver = null;
 
 function setupTooltipObserver() {
   if (!tooltipElement) return;
@@ -670,7 +797,8 @@ function setupTooltipObserver() {
 }
 
 
-// --- INFO BOX DISPLAY ---
+// ─── INFO BOX ─────────────────────────────────────────────────────────────────
+
 function showInfoBox(name, data) {
   infoName.textContent = name;
   infoData.innerHTML = data;
@@ -686,7 +814,8 @@ function clearInfoBox() {
 }
 
 
-// --- SEARCH: SHOW REGION IN INFO BOX ---
+// ─── SEARCH ───────────────────────────────────────────────────────────────────
+
 function showRegionFromSearch(regionName) {
   const regionData = regionTooltips[regionName.toLowerCase()];
 
@@ -699,16 +828,12 @@ function showRegionFromSearch(regionName) {
   }
 }
 
-
-// --- FUZZY SEARCH ---
 function fuzzySearch(query) {
   if (!query) return [];
-  query = query.toLowerCase();
-  return regionNames.filter(name => name.toLowerCase().includes(query));
+  const lowerQuery = query.toLowerCase();
+  return regionNames.filter(name => name.toLowerCase().includes(lowerQuery));
 }
 
-
-// --- AUTOCOMPLETE ---
 function renderAutocomplete(matches) {
   list.innerHTML = "";
 
@@ -726,8 +851,6 @@ function renderAutocomplete(matches) {
   });
 }
 
-
-// --- SEARCH INPUT HANDLER ---
 search.addEventListener("input", () => {
   const q = search.value.trim();
   if (!q) {
@@ -743,24 +866,16 @@ search.addEventListener("input", () => {
   }
 });
 
-
-// --- SEARCH BUTTON CLICK HANDLER ---
-// Clicking the magnifier button submits whatever is currently typed,
-// same behaviour as pressing Enter would give in a native search form
-const searchButton = document.getElementById("search-button");
-
+// Clicking the magnifier button submits whatever is currently typed
 searchButton.addEventListener("click", () => {
   const q = search.value.trim();
-  if (!q) {
-    return;
-  }
+  if (!q) return;
 
   list.innerHTML = "";
   showRegionFromSearch(q);
 });
 
-
-// --- CLOSE AUTOCOMPLETE ON OUTSIDE CLICK ---
+// Close autocomplete when clicking outside the search field
 document.addEventListener("click", (e) => {
   if (e.target !== search) {
     list.innerHTML = "";
