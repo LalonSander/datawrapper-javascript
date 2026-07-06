@@ -42,12 +42,12 @@ const infoName = document.getElementById("info-name");
 const infoData = document.getElementById("info-data");
 const searchButton = document.getElementById("search-button");
 
+// Lazy load elements
+const loadMapButton = document.getElementById("load-map-button");
+const loadPlaceholder = document.getElementById("load-placeholder");
+const mapControls = document.getElementById("map-controls");
+const datawrapperEmbed = document.getElementById("datawrapper-embed");
 
-// ─── DEBUG LOGGING ────────────────────────────────────────────────────────────
-
-function log(msg) {
-  console.log(msg);
-}
 
 // ─── CSV PARSING ──────────────────────────────────────────────────────────────
 
@@ -82,7 +82,7 @@ function parseDatasetCSV(csvText) {
   const tooltipColumnIndex = headerCols.indexOf('tooltip');
 
   if (nameColumnIndex === -1 || agsColumnIndex === -1 || tooltipColumnIndex === -1) {
-    log("❌ dataset.csv missing expected columns. Found: " + headerCols.join(', '));
+    console.error("dataset.csv missing expected columns. Found: " + headerCols.join(', '));
     return;
   }
 
@@ -100,16 +100,14 @@ function parseDatasetCSV(csvText) {
     }
   });
 
-  log("✅ Loaded " + regionNames.length + " regions from dataset.csv");
+  console.log("Loaded " + regionNames.length + " regions from dataset.csv");
 }
 
 function loadDatasetFromUrl(datasetUrl) {
-  log("📡 Fetching dataset from: " + datasetUrl);
-
   fetch(datasetUrl)
     .then(r => r.text())
     .then(text => parseDatasetCSV(text))
-    .catch(err => log("❌ dataset.csv fetch error: " + err));
+    .catch(err => console.error("dataset.csv fetch error:", err));
 }
 
 
@@ -120,7 +118,7 @@ function extractBasemapUrlFromChartData(chartData) {
   const basemapAssetKey = Object.keys(assets).find(key => key.includes('germany-gemeinde'));
 
   if (!basemapAssetKey) {
-    log("❌ Could not find germany-gemeinde basemap in chart assets");
+    console.error("Could not find germany-gemeinde basemap in chart assets");
     return null;
   }
 
@@ -129,7 +127,6 @@ function extractBasemapUrlFromChartData(chartData) {
   const chartBase = chartPublicUrl.replace(/\/[^/]+\/?$/, '/');
   const resolvedUrl = new URL(relativeUrl, chartBase).href;
 
-  log("📍 Resolved basemap URL: " + resolvedUrl);
   return resolvedUrl;
 }
 
@@ -137,13 +134,11 @@ function extractDatasetUrlFromChartData(chartData) {
   const assets = chartData.assets;
 
   if (!assets['dataset.csv']) {
-    log("❌ Could not find dataset.csv in chart assets");
+    console.error("Could not find dataset.csv in chart assets");
     return null;
   }
 
-  const resolvedUrl = new URL(assets['dataset.csv'].url, chartData.chart.publicUrl).href;
-  log("📍 Resolved dataset URL: " + resolvedUrl);
-  return resolvedUrl;
+  return new URL(assets['dataset.csv'].url, chartData.chart.publicUrl).href;
 }
 
 function loadFromChartData() {
@@ -163,14 +158,14 @@ function loadFromChartData() {
           if (basemapUrl) loadMapDataFromBasemapUrl(basemapUrl);
           if (datasetUrl) loadDatasetFromUrl(datasetUrl);
         })
-        .catch(err => log("❌ Failed to resolve chart data Promise: " + err));
+        .catch(err => console.error("Failed to resolve chart data Promise:", err));
       return;
     }
 
     const elapsedMs = Date.now() - startTime;
 
     if (elapsedMs >= CHART_DATA_POLL_TIMEOUT_MS) {
-      log("❌ chartData timed out — falling back to Performance API");
+      console.warn("chartData timed out — falling back to Performance API");
       pollForUrl(BASEMAP_URL_PATTERN, loadMapDataFromBasemapUrl);
       pollForUrl(DATASET_URL_PATTERN, loadDatasetFromUrl);
       return;
@@ -198,7 +193,7 @@ function pollForUrl(pattern, onFound) {
     }
 
     if (Date.now() - startTime >= POLL_TIMEOUT_MS) {
-      log("❌ Timed out polling for: " + pattern);
+      console.error("Timed out polling for: " + pattern);
       return;
     }
 
@@ -212,20 +207,17 @@ function pollForUrl(pattern, onFound) {
 // ─── MAP DATA ─────────────────────────────────────────────────────────────────
 
 function loadMapDataFromBasemapUrl(basemapUrl) {
-  log("📡 Fetching basemap from: " + basemapUrl);
-
   fetch(basemapUrl)
     .then(r => r.json())
     .then(data => {
       mapData = data.content || data;
       buildGeometryLookup();
-      log("✅ Loaded basemap");
 
       if (shadowRoot) {
         setupPathGenerator();
       }
     })
-    .catch(err => log("❌ Basemap fetch error: " + err));
+    .catch(err => console.error("Basemap fetch error:", err));
 }
 
 function buildGeometryLookup() {
@@ -235,8 +227,6 @@ function buildGeometryLookup() {
     if (geom.properties.ARS) geometryByARS[geom.properties.ARS] = geom;
     if (geom.properties.AGS) geometryByARS[geom.properties.AGS] = geom;
   });
-
-  log("✅ Built geometry lookup with " + Object.keys(geometryByARS).length + " entries");
 }
 
 
@@ -255,8 +245,6 @@ function setupPathGenerator() {
   const scale = Math.min(width / bboxWidth, height / bboxHeight);
   const translateX = width / 2 - (bbox[0] + bboxWidth / 2) * scale;
   const translateY = height / 2 - (bbox[1] + bboxHeight / 2) * scale;
-
-  log(`Transform: scale=${scale.toFixed(6)}, translate=(${translateX.toFixed(2)}, ${translateY.toFixed(2)})`);
 
   geoPathGenerator = { scaleX: scale, scaleY: scale, translateX, translateY };
 
@@ -402,7 +390,6 @@ function updateRegionPin(ars) {
 
   svg.appendChild(buildPinGroup(svgX, svgY));
   currentPinArs = ars;
-  log(`✅ Pin at (${svgX.toFixed(1)}, ${svgY.toFixed(1)}) for ARS: ${ars}`);
 }
 
 function clearRegionPin() {
@@ -450,37 +437,20 @@ function clearHoverOutline() {
 
 
 // ─── TOOLTIP INTERCEPTION ─────────────────────────────────────────────────────
-// We intercept Datawrapper's native tooltip element in the shadow DOM rather
-// than using the datawrapper.on events API. This approach fires for both
-// desktop hover and mobile tap through the same code path, and gives us the
-// already-rendered tooltip content (including our pre-formatted HTML from the
-// tooltip column) rather than raw CSV values.
 
 function setupTooltipInterception(retries) {
-  // The tooltip element may not exist immediately — retry until found
   if (retries === undefined) retries = 10;
 
   tooltipElement = shadowRoot.querySelector('.dw-tooltip');
 
   if (!tooltipElement) {
-    log("❌ No .dw-tooltip found. Retries left: " + retries);
-
     if (retries > 0) {
       setTimeout(function() { setupTooltipInterception(retries - 1); }, 300);
-    } else {
-      log("❌ Tooltip interception failed permanently — giving up.");
     }
     return;
   }
 
-  log("✅ Found .dw-tooltip element");
-
   hoverOutlineElement = shadowRoot.querySelector('.hover-outline');
-  if (hoverOutlineElement) {
-    log("✅ Found .hover-outline element");
-  } else {
-    log("⚠️ No .hover-outline element found");
-  }
 
   if (mapData) {
     setupPathGenerator();
@@ -494,28 +464,19 @@ function setupTooltipInterception(retries) {
 function hideNativeTooltip() {
   if (!tooltipElement) return;
 
-  // On touch devices the tooltip is sticky — the user needs the close button
-  // to dismiss it, so we cannot hide the entire element. Instead we hide
-  // only the visual content while keeping pointer-events intact for the
-  // close button. On desktop there is no close button so we hide fully.
   const isTouchDevice = window.matchMedia('(hover: none)').matches;
 
   if (isTouchDevice) {
-    // Hide visual content but keep the close button functional
-    // The .dw-tooltip-close button must remain interactive
     tooltipElement.style.setProperty('opacity', '0', 'important');
     tooltipElement.style.setProperty('background', 'transparent', 'important');
     tooltipElement.style.setProperty('border', 'none', 'important');
     tooltipElement.style.setProperty('box-shadow', 'none', 'important');
-    // Keep pointer-events so the close button still works
-    log("✅ Native tooltip visually hidden (touch mode — close button preserved)");
   } else {
     tooltipElement.style.setProperty('opacity', '0', 'important');
     tooltipElement.style.setProperty('visibility', 'hidden', 'important');
     tooltipElement.style.setProperty('pointer-events', 'none', 'important');
     tooltipElement.style.setProperty('position', 'absolute', 'important');
     tooltipElement.style.setProperty('left', '-9999px', 'important');
-    log("✅ Native tooltip fully hidden (desktop mode)");
   }
 }
 
@@ -526,17 +487,12 @@ function setupTooltipObserver() {
     tooltipObserver.disconnect();
   }
 
-  // Watch for changes to the tooltip's content — Datawrapper updates the
-  // innerHTML when the user hovers or taps a region, populating the <h2>
-  // with the region name. We use that name to look up our own data.
   tooltipObserver = new MutationObserver(function() {
     const h2 = tooltipElement.querySelector('h2');
 
     if (!h2) return;
 
     const regionName = h2.textContent.trim();
-    log("📡 Tooltip h2 changed: " + regionName);
-
     const regionData = regionTooltips[regionName.toLowerCase()];
 
     if (regionData) {
@@ -545,8 +501,6 @@ function setupTooltipObserver() {
       updateRegionPin(regionData.ars);
       search.value = regionData.name;
       list.innerHTML = "";
-    } else {
-      log("⚠️ No CSV match for: " + regionName);
     }
   });
 
@@ -555,8 +509,6 @@ function setupTooltipObserver() {
     subtree: true,
     characterData: true
   });
-
-  log("✅ Tooltip MutationObserver active");
 }
 
 
@@ -567,6 +519,15 @@ function showInfoBox(name, tooltipHtml) {
   infoData.innerHTML = tooltipHtml;
   infoBox.classList.add('has-content');
 }
+
+function clearInfoBox() {
+  infoName.textContent = '';
+  infoData.innerHTML = '';
+  infoBox.classList.remove('has-content');
+  clearHoverOutline();
+  clearRegionPin();
+}
+
 
 // ─── SEARCH ───────────────────────────────────────────────────────────────────
 
@@ -633,23 +594,71 @@ document.addEventListener("click", (e) => {
 });
 
 
-// ─── CHART INITIALISATION ─────────────────────────────────────────────────────
+// ─── LAZY LOAD ────────────────────────────────────────────────────────────────
+// The Datawrapper embed script is not present in the HTML at all — it is
+// created and injected into #datawrapper-embed only when the user clicks
+// the load button. This prevents any map-related network requests on page load.
+//
+// Load sequence after button click:
+//   1. injectDatawrapperScript() — creates and appends the <script> tag
+//   2. waitForChartComponent()   — polls until datawrapper-visualization appears
+//   3. waitForMapSvg()           — polls until svg.svg-main appears in shadow DOM,
+//                                  which is the reliable signal that rendering is done
+//   4. onMapReady()              — hides placeholder, reveals map-controls
 
-function waitForChart() {
-  const component = document.querySelector('datawrapper-visualization');
+loadMapButton.addEventListener("click", function() {
+  loadMapButton.textContent = "Karte wird geladen…";
+  loadMapButton.disabled = true;
+  injectDatawrapperScript();
+  waitForChartComponent();
+});
+
+function injectDatawrapperScript() {
+  // Show the embed container so Datawrapper has a visible parent to size into
+  datawrapperEmbed.style.display = "block";
+
+  // Create the embed script element and append it — this triggers the load
+  const scriptElement = document.createElement("script");
+  scriptElement.src = "https://datawrapper.dwcdn.net/eC2gr/embed.js";
+  scriptElement.charset = "utf-8";
+  datawrapperEmbed.appendChild(scriptElement);
+}
+
+function waitForChartComponent() {
+  // Poll until the datawrapper-visualization custom element exists and has
+  // a populated shadowRoot — the component registers itself asynchronously
+  const component = document.querySelector("datawrapper-visualization");
 
   if (component && component.shadowRoot) {
     shadowRoot = component.shadowRoot;
-    log("✅ Found Datawrapper web component");
 
+    // Start loading basemap and dataset in parallel with SVG rendering
     loadFromChartData();
 
-    // Start tooltip interception after a short delay to allow Datawrapper
-    // to finish rendering its internal DOM before we query it
-    setTimeout(function() { setupTooltipInterception(10); }, 500);
+    // Now wait for the SVG to appear, which confirms the map is rendered
+    waitForMapSvg();
   } else {
-    setTimeout(waitForChart, 300);
+    setTimeout(waitForChartComponent, 300);
   }
+}
+
+function waitForMapSvg() {
+  // svg.svg-main is injected by Datawrapper only once the choropleth map
+  // has fully rendered — it is the most reliable readiness signal available
+  const svg = shadowRoot.querySelector("svg.svg-main");
+
+  if (svg) {
+    setupTooltipInterception(10);
+    onMapReady();
+  } else {
+    setTimeout(waitForMapSvg, 200);
+  }
+}
+
+function onMapReady() {
+  // Hide the preview placeholder and reveal the search + info box
+  loadPlaceholder.style.display = "none";
+  mapControls.style.display = "block";
 }
 
 function observeResizeForPathGenerator() {
@@ -666,79 +675,4 @@ function observeResizeForPathGenerator() {
   });
 
   resizeObserver.observe(svg);
-  log("🔄 Resize observer attached to SVG");
-}
-
-// ─── LAZY LOAD BUTTON ─────────────────────────────────────────────────────────
-// The map embed script is not loaded on page load — it is injected into the
-// DOM only after the user clicks the load button. This avoids fetching the
-// 5MB+ basemap and dataset on initial page load.
-//
-// Once the embed script is injected, we wait for the datawrapper-visualization
-// custom element to appear in the DOM with its shadowRoot populated, which
-// signals that Datawrapper has finished rendering and is ready to interact with.
-
-const loadMapButton = document.getElementById("load-map-button");
-const loadPlaceholder = document.getElementById("load-placeholder");
-const uiChrome = document.getElementById("ui-chrome");
-const datawrapperEmbed = document.getElementById("datawrapper-embed");
-
-loadMapButton.addEventListener("click", function() {
-  // Show loading state on the button while the map initialises
-  loadMapButton.textContent = "Karte wird geladen…";
-  loadMapButton.disabled = true;
-
-  // Inject the Datawrapper embed script dynamically — this is what triggers
-  // Datawrapper to start fetching the map data and rendering the component
-  injectDatawrapperScript();
-
-  // Begin polling for the web component to appear
-  waitForChart();
-});
-
-function injectDatawrapperScript() {
-  const scriptElement = document.createElement("script");
-  scriptElement.src = "https://datawrapper.dwcdn.net/eC2gr/embed.js";
-  scriptElement.charset = "utf-8";
-  scriptElement.defer = true;
-
-  datawrapperEmbed.style.display = "block";
-  datawrapperEmbed.appendChild(scriptElement);
-}
-
-function onChartReady() {
-  // Hide the placeholder and show the search + info box
-  loadPlaceholder.classList.add("is-loading");
-  uiChrome.classList.add("is-ready");
-}
-
-function waitForChart() {
-  const component = document.querySelector("datawrapper-visualization");
-
-  if (component && component.shadowRoot) {
-    shadowRoot = component.shadowRoot;
-
-    loadFromChartData();
-
-    // The shadowRoot is present but Datawrapper may still be rendering.
-    // We detect readiness by watching for the SVG to appear, which is
-    // the most reliable signal that the map is fully rendered.
-    waitForSvg();
-  } else {
-    setTimeout(waitForChart, 300);
-  }
-}
-
-function waitForSvg() {
-  // Poll for svg.svg-main inside the shadow DOM — this element is only
-  // present once Datawrapper has finished rendering the choropleth map
-  const svg = shadowRoot.querySelector("svg.svg-main");
-
-  if (svg) {
-    // Map is rendered — set up tooltip interception and reveal the UI
-    setTimeout(function() { setupTooltipInterception(10); }, 100);
-    onChartReady();
-  } else {
-    setTimeout(waitForSvg, 200);
-  }
 }
