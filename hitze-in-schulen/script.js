@@ -513,18 +513,54 @@ function clearInfoBox() {
 
 // ─── REGION SELECTION ─────────────────────────────────────────────────────────
 
+function selectRegionFromEvent(eventData) {
+  // eventData contains the CSV columns from Datawrapper:
+  // { region: string, AGS: string, tooltip: string, ... }
+  // The datawrapper.on event data contains the CSV columns directly,
+  // so we can populate the info box immediately without waiting for
+  // the async regionTooltips lookup to be ready — this is critical on
+  // mobile where the user may tap before the dataset fetch completes.
+  const regionName = eventData.region;
+  const tooltipHtml = eventData.tooltip;
+  const ags = eventData.AGS;
+
+  if (!regionName) {
+    log("⚠️ region.mouseenter fired with no region name");
+    return;
+  }
+
+  // Show info box immediately from event data — no async dependency
+  showInfoBox(regionName, tooltipHtml || "");
+  search.value = regionName;
+  list.innerHTML = "";
+
+  // Outline and pin need the geometry lookup — use event AGS directly
+  // rather than going through regionTooltips, for the same timing reason
+  if (ags) {
+    updateHoverOutline(ags);
+    updateRegionPin(ags);
+  } else {
+    // AGS not in event data — fall back to regionTooltips if available
+    const regionData = regionTooltips[regionName.toLowerCase()];
+    if (regionData) {
+      updateHoverOutline(regionData.ars);
+      updateRegionPin(regionData.ars);
+    }
+  }
+
+  ensureNativeTooltipHidden();
+}
+
 function selectRegionByName(regionName) {
+  // Used by the search field — looks up from regionTooltips since
+  // we don't have event data here. The dataset will be loaded by the
+  // time a user types a search, so the timing issue doesn't apply.
   const regionData = regionTooltips[regionName.toLowerCase()];
 
   if (regionData) {
     showInfoBox(regionData.name, regionData.tooltip);
     updateHoverOutline(regionData.ars);
     updateRegionPin(regionData.ars);
-    search.value = regionData.name;
-    list.innerHTML = "";
-    // Re-check tooltip suppression — on mobile the element may appear
-    // only after the first interaction
-    ensureNativeTooltipHidden();
   } else {
     log("⚠️ No CSV match for: " + regionName);
   }
@@ -547,8 +583,8 @@ function selectRegionFromSearch(regionName) {
 
 datawrapper.on('region.mouseenter', ({ chartId, data }) => {
   if (chartId !== CHART_ID) return;
-  log("📡 region.mouseenter: " + data.region);
-  selectRegionByName(data.region);
+  log("📡 region.mouseenter: " + data.region + " AGS: " + data.AGS);
+  selectRegionFromEvent(data);
 });
 
 datawrapper.on('region.mouseleave', ({ chartId }) => {
