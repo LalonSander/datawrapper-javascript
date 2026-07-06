@@ -193,8 +193,8 @@ body {
   }
 
   #chart-container {
-     width: 320px;
-     height: 548px;
+     width: 500px;
+     height: 625px;
   }
 }
 
@@ -233,7 +233,7 @@ body {
   }
 
   #chart-container {
-    width: 320px;
-    height: 548px;
+    width: 280px;
+    height: 480px;
   }
 }
