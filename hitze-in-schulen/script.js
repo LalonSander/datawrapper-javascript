@@ -660,7 +660,7 @@ function onMapReady() {
   // Hide the placeholder, reveal the now-rendered map, and show the controls
   // all in the same paint cycle — the map was already rendered but invisible,
   // so this is a clean single swap with no flash of intermediate states
-  loadPlaceholder.remove();
+  loadPlaceholder.style.display = "none";
   mapControls.style.display = "block";
 }
 
