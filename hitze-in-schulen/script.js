@@ -662,7 +662,7 @@ function onMapReady() {
   // all in the same paint cycle — the map was already rendered but invisible,
   // so this is a clean single swap with no flash of intermediate states
   loadPlaceholder.style.display = "none";
-  datawrapperEmbed.style.visibility = "visible";
+  setTimeout(() => datawrapperEmbed.style.visibility = "visible", 500);
   mapControls.style.display = "block";
 }
 
