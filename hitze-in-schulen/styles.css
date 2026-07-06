@@ -269,3 +269,71 @@ body {
     height: 480px;
   }
 }
+
+
+/* ── Load placeholder ─────────────────────────────────────────────────────────
+   Shown before the user clicks to load the interactive map. The placeholder
+   fills the full chart container so layout doesn't shift when the map loads.
+   The button is centered over the preview image using flexbox. */
+#load-placeholder {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#map-preview-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.6;
+}
+
+#load-map-button {
+  /* position: relative sits above the absolutely-positioned image */
+  position: relative;
+  z-index: 10;
+  padding: 14px 28px;
+  max-width: 260px;
+  /* taz dark background — matches the search button colour */
+  background: rgba(31, 31, 31, 0.85) !important;
+  color: #fff !important;
+  border: 2px solid rgba(255, 255, 255, 0.3) !important;
+  border-radius: 0;
+  cursor: pointer;
+  /* taz bold font stack */
+  font-family: AktivGrotesk_Bd, AktivGrotesk_BdExt, Arial, sans-serif;
+  font-size: 1rem;
+  line-height: 1.4;
+  text-align: center;
+  white-space: normal;
+  backdrop-filter: blur(6px);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+#load-map-button:hover {
+  /* taz red on hover — matches the search button hover colour */
+  background: rgba(170, 9, 36, 0.9) !important;
+  border-color: rgba(255, 255, 255, 0.5) !important;
+}
+
+#load-map-button:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+/* #map-controls is hidden until onMapReady() sets display: block via JS */
+#map-controls {
+  display: none;
+}
+
+/* #datawrapper-embed fills the full chart container once revealed */
+#datawrapper-embed {
+  width: 100%;
+  height: 100%;
+}
