@@ -147,27 +147,30 @@ body {
 
 
 /* ── Chart container ──────────────────────────────────────────────────────────
-   Width and height are fixed to Datawrapper's preview dimensions at each
-   breakpoint. Datawrapper derives height from width for choropleth maps, so
-   fixing the width makes the height predictable. Heights are measured directly
-   from Datawrapper's preview tool rather than calculated.
+   Width and height are fixed to match Datawrapper's preview dimensions.
+   Datawrapper derives height from width for choropleth maps, so both must
+   be set explicitly. Adjust the width value to find the best fit, then
+   update the height to match what Datawrapper shows at that width.
 
-   Desktop:  600px wide → 799px tall
-   Tablet:   400px wide → 653px tall
-   Mobile:   320px wide → 548px tall
+   Measured preview dimensions:
+     320px wide → 548px tall
+     400px wide → 653px tall
+     600px wide → 799px tall */
 
-   The !important overrides Datawrapper's own inline embed-height. */
+/* ── Try different values here to find the best desktop fit ── */
 #chart-container {
   position: relative;
-  width: 600px;
-  height: 799px;
+  width: 500px;
+  height: 625px;
 }
 
+/* Force the Datawrapper web component to use our fixed dimensions
+   rather than its own embed-width and embed-height from chart config */
 #chart-container datawrapper-visualization {
-  width: 100% !important;
-  height: 100% !important;
+  display: block;
+  width: 320px !important;
+  height: 548px !important;
 }
-
 
 /* ── Debug panel ──────────────────────────────────────────────────────────────
    Scrollable pre-formatted log output for development. Hidden by default —
