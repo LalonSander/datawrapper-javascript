@@ -2,169 +2,95 @@
 let regionTooltips = {};  // name (lowercase) -> { name, ars, tooltip }
 let regionNames = [];
 
-// Maximum time to wait for the dataset.csv resource to appear in performance entries
-const DATASET_POLL_TIMEOUT_MS = 10000;
-const DATASET_POLL_INTERVAL_MS = 300;
-const DATASET_URL_PATTERN = 'dataset.csv';
+// Chart ID matching the Datawrapper embed — used to read from window.datawrapper.chartData
+const CHART_ID = 'eC2gr';
 
-function parseCSVLine(line) {
-  const result = [];
-  let current = '';
-  let inQuotes = false;
+// Maximum time to wait for window.datawrapper.chartData to be populated
+const CHART_DATA_POLL_TIMEOUT_MS = 10000;
+const CHART_DATA_POLL_INTERVAL_MS = 300;
 
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
+function extractBasemapUrlFromChartData(chartData) {
+  // The assets block contains the basemap filename with its content hash,
+  // e.g. "germany-gemeinde-2022-may.18a5476b.json". The URL is relative
+  // to the chart's public URL, so we resolve it against that base.
+  const assets = chartData.assets;
+  const basemapAssetKey = Object.keys(assets).find(key => key.includes('germany-gemeinde'));
 
-    if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
-      result.push(current.trim());
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  result.push(current.trim());
-
-  return result;
-}
-
-function findDatasetUrlFromPerformanceEntries() {
-  const resourceEntries = performance.getEntriesByType('resource');
-
-  for (const entry of resourceEntries) {
-    if (entry.name.includes(DATASET_URL_PATTERN)) {
-      return entry.name;
-    }
+  if (!basemapAssetKey) {
+    log("❌ Could not find germany-gemeinde basemap in chart assets");
+    return null;
   }
 
-  return null;
+  const relativeUrl = assets[basemapAssetKey].url;
+  const chartPublicUrl = chartData.chart.publicUrl;
+
+  // The relative URL starts with ../../ from the chart's public URL directory,
+  // so we resolve it from the chart base rather than the page origin
+  const chartBase = chartPublicUrl.replace(/\/[^/]+\/?$/, '/');
+  const resolvedUrl = new URL(relativeUrl, chartBase).href;
+
+  log("📍 Resolved basemap URL from chart data: " + resolvedUrl);
+  return resolvedUrl;
 }
 
-function parseDatasetCSV(csvText) {
-  const lines = csvText.trim().split('\n');
 
-  // First line is the header row — find the column index for each field we need
-  const headerCols = parseCSVLine(lines[0]);
-  const nameColumnIndex = headerCols.indexOf('region');
-  const agsColumnIndex = headerCols.indexOf('AGS');
-  const tooltipColumnIndex = headerCols.indexOf('tooltip');
+function extractDatasetUrlFromChartData(chartData) {
+  // The dataset.csv URL in the assets block is just "dataset.csv" —
+  // a relative path resolved against the chart's public URL
+  const assets = chartData.assets;
 
-  if (nameColumnIndex === -1 || agsColumnIndex === -1 || tooltipColumnIndex === -1) {
-    log("❌ dataset.csv missing expected columns (region, AGS, tooltip). Found: " + headerCols.join(', '));
-    return;
+  if (!assets['dataset.csv']) {
+    log("❌ Could not find dataset.csv in chart assets");
+    return null;
   }
 
-  const dataLines = lines.slice(1);
+  const relativeUrl = assets['dataset.csv'].url;
+  const chartPublicUrl = chartData.chart.publicUrl;
+  const resolvedUrl = new URL(relativeUrl, chartPublicUrl).href;
 
-  dataLines.forEach(line => {
-    const cols = parseCSVLine(line);
-    const name = cols[nameColumnIndex];
-    const ags = cols[agsColumnIndex];
-    const tooltip = cols[tooltipColumnIndex];
-
-    if (name && ags && tooltip) {
-      regionTooltips[name.toLowerCase()] = { name, ars: ags, tooltip };
-      regionNames.push(name);
-    }
-  });
-
-  log("✅ Loaded " + regionNames.length + " regions with tooltips from dataset.csv");
+  log("📍 Resolved dataset URL from chart data: " + resolvedUrl);
+  return resolvedUrl;
 }
 
-function loadDatasetFromUrl(datasetUrl) {
-  log("📡 Fetching dataset from: " + datasetUrl);
 
-  fetch(datasetUrl)
-    .then(r => r.text())
-    .then(text => parseDatasetCSV(text))
-    .catch(err => log("❌ dataset.csv fetch error: " + err));
-}
-
-function pollForDatasetUrl() {
+function loadFromChartData() {
+  // window.datawrapper.chartData[CHART_ID] is a Promise set by embed.js.
+  // We poll until it exists, then resolve it to get the full chart config.
   const startTime = Date.now();
 
   function attempt() {
-    const datasetUrl = findDatasetUrlFromPerformanceEntries();
+    const chartDataExists = window.datawrapper
+      && window.datawrapper.chartData
+      && window.datawrapper.chartData[CHART_ID];
 
-    if (datasetUrl) {
-      loadDatasetFromUrl(datasetUrl);
+    if (chartDataExists) {
+      window.datawrapper.chartData[CHART_ID]
+        .then(chartData => {
+          const basemapUrl = extractBasemapUrlFromChartData(chartData);
+          const datasetUrl = extractDatasetUrlFromChartData(chartData);
+
+          if (basemapUrl) {
+            loadMapDataFromBasemapUrl(basemapUrl);
+          }
+
+          if (datasetUrl) {
+            loadDatasetFromUrl(datasetUrl);
+          }
+        })
+        .catch(err => log("❌ Failed to resolve chart data Promise: " + err));
       return;
     }
 
     const elapsedMs = Date.now() - startTime;
 
-    if (elapsedMs >= DATASET_POLL_TIMEOUT_MS) {
-      log("❌ Timed out waiting for dataset.csv resource in performance entries");
+    if (elapsedMs >= CHART_DATA_POLL_TIMEOUT_MS) {
+      log("❌ Timed out waiting for window.datawrapper.chartData — falling back to Performance API");
+      pollForBasemapUrl();
+      pollForDatasetUrl();
       return;
     }
 
-    setTimeout(attempt, DATASET_POLL_INTERVAL_MS);
-  }
-
-  attempt();
-}
-
-
-// --- MAP DATA (loaded via Performance API after Datawrapper fetches it) ---
-let mapData = null;
-let geometryByARS = {};
-let geoPathGenerator = null;
-
-// Maximum time to wait for the basemap resource to appear in performance entries
-const BASEMAP_POLL_TIMEOUT_MS = 10000;
-const BASEMAP_POLL_INTERVAL_MS = 300;
-const BASEMAP_URL_PATTERN = 'datawrapper.dwcdn.net/lib/basemaps/germany-gemeinde';
-
-function findBasemapUrlFromPerformanceEntries() {
-  const resourceEntries = performance.getEntriesByType('resource');
-
-  for (const entry of resourceEntries) {
-    if (entry.name.includes(BASEMAP_URL_PATTERN)) {
-      return entry.name;
-    }
-  }
-
-  return null;
-}
-
-function loadMapDataFromBasemapUrl(basemapUrl) {
-  log("📡 Fetching basemap from: " + basemapUrl);
-
-  fetch(basemapUrl)
-    .then(r => r.json())
-    .then(data => {
-      mapData = data.content || data;
-      buildGeometryLookup();
-      log("✅ Loaded basemap via Performance API");
-
-      // Setup path generator now that map data is available
-      if (shadowRoot) {
-        setupPathGenerator();
-      }
-    })
-    .catch(err => log("❌ Basemap fetch error: " + err));
-}
-
-function pollForBasemapUrl() {
-  const startTime = Date.now();
-
-  function attempt() {
-    const basemapUrl = findBasemapUrlFromPerformanceEntries();
-
-    if (basemapUrl) {
-      loadMapDataFromBasemapUrl(basemapUrl);
-      return;
-    }
-
-    const elapsedMs = Date.now() - startTime;
-
-    if (elapsedMs >= BASEMAP_POLL_TIMEOUT_MS) {
-      log("❌ Timed out waiting for basemap resource in performance entries");
-      return;
-    }
-
-    setTimeout(attempt, BASEMAP_POLL_INTERVAL_MS);
+    setTimeout(attempt, CHART_DATA_POLL_INTERVAL_MS);
   }
 
   attempt();
