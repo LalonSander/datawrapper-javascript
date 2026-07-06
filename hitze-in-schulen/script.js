@@ -610,14 +610,12 @@ loadMapButton.addEventListener("click", function() {
   loadMapButton.textContent = "Karte wird geladen…";
   loadMapButton.disabled = true;
   injectDatawrapperScript();
+  document.getElementById("chart-container").style.visibility = "hidden";
   waitForChartComponent();
 });
 
 function injectDatawrapperScript() {
-  // Make the embed container present in the layout so Datawrapper can measure
-  // and render into it, but keep it invisible until the map is fully ready
   datawrapperEmbed.style.display = "block";
-  datawrapperEmbed.style.visibility = "hidden";
 
   // Create the embed script element and append it — this triggers the load
   const scriptElement = document.createElement("script");
