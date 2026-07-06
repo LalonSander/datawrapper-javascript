@@ -150,6 +150,48 @@ body {
 }
 
 
+/* ── Lazy load placeholder ────────────────────────────────────────────────────
+   Covers the chart container with a blurred preview image and a centred
+   load button until the user opts in. Once clicked, the placeholder is
+   hidden and the Datawrapper embed is injected and shown.
+
+   The placeholder fills the chart container exactly, so it inherits the
+   fixed width/height from #chart-container at each breakpoint. */
+#chart-placeholder {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#chart-preview-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+  /* Slight blur signals that this is a static preview, not the live map */
+  filter: blur(2px);
+  opacity: 0.85;
+}
+
+/* Load button — uses taz .button.primary-button classes for base styles.
+   Positioned over the preview image via z-index. The taz primary-button
+   gives us #1f1f1f background → #ad0924 on hover, which matches our
+   search button hover colour. max-width override needed since taz caps
+   .button at 480px, which is fine here. */
+#load-chart-button {
+  position: relative;
+  z-index: 10;
+  /* Override taz .button margin-top since we're centering via flexbox */
+  margin-top: 0;
+}
+
+
 /* ── Chart container ──────────────────────────────────────────────────────────
    Width and height are fixed to match Datawrapper's preview dimensions.
    Datawrapper derives height from width for choropleth maps, so both must
@@ -226,72 +268,4 @@ body {
     width: 280px;
     height: 480px;
   }
-}
-
-/* ── Load placeholder ─────────────────────────────────────────────────────────
-   Shown before the user clicks to load the interactive map. The preview image
-   fills the same fixed dimensions as the chart container so the layout doesn't
-   shift when the map loads. The button is centered over the image using
-   absolute positioning within the relative #chart-container. */
-#load-placeholder {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-#map-preview-image {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  opacity: 0.6;
-}
-
-#load-map-button {
-  position: relative; /* sits above the image */
-  z-index: 10;
-  padding: 14px 28px;
-  /* taz dark background with slight transparency — matches #1f1f1f from design system */
-  background: rgba(31, 31, 31, 0.85);
-  color: #fff;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-radius: 0; /* sharp corners matching taz design language */
-  cursor: pointer;
-  font-family: AktivGrotesk_Bd, AktivGrotesk_BdExt, Arial, sans-serif;
-  font-size: 1rem;
-  line-height: 1.4;
-  text-align: center;
-  backdrop-filter: blur(6px);
-  transition: background 0.2s ease, border-color 0.2s ease;
-  white-space: normal;
-  max-width: 260px;
-}
-
-#load-map-button:hover {
-  background: rgba(170, 9, 36, 0.9); /* taz red on hover, matching #search-button */
-  border-color: rgba(255, 255, 255, 0.5);
-}
-
-/* Hide the placeholder once loading begins */
-#load-placeholder.is-loading {
-  display: none;
-}
-
-/* Hidden until map and data are fully ready */
-#ui-chrome {
-  display: none;
-}
-
-#ui-chrome.is-ready {
-  display: block;
-}
-
-#datawrapper-embed {
-  width: 100%;
-  height: 100%;
 }
