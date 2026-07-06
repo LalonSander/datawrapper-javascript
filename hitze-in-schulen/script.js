@@ -40,9 +40,6 @@ const list = document.getElementById("autocomplete-list");
 const infoBox = document.getElementById("info-box");
 const infoName = document.getElementById("info-name");
 const infoData = document.getElementById("info-data");
-const debugEl = document.getElementById("debug");
-const toggleDebugBtn = document.getElementById("toggle-debug");
-const clearInfoBtn = document.getElementById("clear-info");
 const searchButton = document.getElementById("search-button");
 
 
