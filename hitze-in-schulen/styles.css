@@ -147,15 +147,24 @@ body {
 
 
 /* ── Chart container ──────────────────────────────────────────────────────────
-   Fixed height per breakpoint — simpler and more predictable than trying to
-   calculate remaining viewport space dynamically. The !important on the web
-   component overrides Datawrapper's own inline embed-height from chart config. */
+   Width and height are fixed to Datawrapper's preview dimensions at each
+   breakpoint. Datawrapper derives height from width for choropleth maps, so
+   fixing the width makes the height predictable. Heights are measured directly
+   from Datawrapper's preview tool rather than calculated.
+
+   Desktop:  600px wide → 799px tall
+   Tablet:   400px wide → 653px tall
+   Mobile:   320px wide → 548px tall
+
+   The !important overrides Datawrapper's own inline embed-height. */
 #chart-container {
   position: relative;
-  height: 600px;
+  width: 600px;
+  height: 799px;
 }
 
 #chart-container datawrapper-visualization {
+  width: 100% !important;
   height: 100% !important;
 }
 
@@ -189,7 +198,8 @@ body {
   }
 
   #chart-container {
-    height: 450px;
+    width: 400px;
+    height: 653px;
   }
 }
 
@@ -228,6 +238,7 @@ body {
   }
 
   #chart-container {
-    height: 350px;
+    width: 320px;
+    height: 548px;
   }
 }
