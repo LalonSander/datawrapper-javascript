@@ -164,14 +164,6 @@ body {
   height: 625px;
 }
 
-/* Force the Datawrapper web component to use our fixed dimensions
-   rather than its own embed-width and embed-height from chart config */
-#chart-container datawrapper-visualization {
-  display: block;
-  width: 320px !important;
-  height: 548px !important;
-}
-
 /* ── Debug panel ──────────────────────────────────────────────────────────────
    Scrollable pre-formatted log output for development. Hidden by default —
    the Toggle Debug button in HTML adds/removes the .hidden class. */
@@ -201,8 +193,8 @@ body {
   }
 
   #chart-container {
-    width: 400px;
-    height: 653px;
+     width: 320px;
+     height: 548px;
   }
 }
 
