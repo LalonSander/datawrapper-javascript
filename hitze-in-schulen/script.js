@@ -648,6 +648,7 @@ function waitForMapSvg() {
   // svg.svg-main is injected by Datawrapper only once the choropleth map
   // has fully rendered — it is the most reliable readiness signal available
   const svg = shadowRoot.querySelector("svg.svg-main");
+  svg.style.visibility = "hidden";
 
   if (svg) {
     setupTooltipInterception(10);
@@ -663,6 +664,7 @@ function onMapReady() {
   // so this is a clean single swap with no flash of intermediate states
   loadPlaceholder.style.display = "none";
   datawrapperEmbed.style.visibility = "visible";
+  svg.style.visibility = "hidden";
   mapControls.style.display = "block";
 }
 
