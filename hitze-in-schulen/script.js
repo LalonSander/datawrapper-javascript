@@ -664,7 +664,7 @@ function onMapReady() {
   // so this is a clean single swap with no flash of intermediate states
   loadPlaceholder.style.display = "none";
   datawrapperEmbed.style.visibility = "visible";
-  svg.style.visibility = "hidden";
+  svg.style.visibility = "visible";
   mapControls.style.display = "block";
 }
 
