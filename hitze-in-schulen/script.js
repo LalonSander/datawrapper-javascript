@@ -648,8 +648,9 @@ function waitForMapSvg() {
   const svg = shadowRoot.querySelector("svg.svg-main");
 
   if (svg) {
+    loadPlaceholder.style.display = "none";
     setupTooltipInterception(10);
-    onMapReady();
+    mapControls.style.display = "block";
   } else {
     setTimeout(waitForMapSvg, 200);
   }
