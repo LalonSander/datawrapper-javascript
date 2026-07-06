@@ -5,8 +5,9 @@ let mapData = null;
 let geometryByARS = {};
 let geoPathGenerator = null;
 let shadowRoot = null;
+let tooltipElement = null;
+let tooltipObserver = null;
 let hoverOutlineElement = null;
-let nativeTooltipElement = null;
 let currentPinArs = null;
 
 
@@ -457,40 +458,114 @@ function clearHoverOutline() {
 }
 
 
-// ─── NATIVE TOOLTIP SUPPRESSION ───────────────────────────────────────────────
-// Datawrapper's native tooltip must be hidden on both desktop and mobile since
-// we display the data ourselves in the info box. The datawrapper.on API does
-// not suppress it automatically — we still need to find and hide it via the
-// shadow DOM. On desktop this happens as soon as the component loads. On mobile
-// the tooltip element may not exist until the first tap, so we also check after
-// each region.mouseenter event.
+// ─── TOOLTIP INTERCEPTION ─────────────────────────────────────────────────────
+// We intercept Datawrapper's native tooltip element in the shadow DOM rather
+// than using the datawrapper.on events API. This approach fires for both
+// desktop hover and mobile tap through the same code path, and gives us the
+// already-rendered tooltip content (including our pre-formatted HTML from the
+// tooltip column) rather than raw CSV values.
 
-function hideNativeTooltip() {
-  if (!shadowRoot) return;
+function setupTooltipInterception(retries) {
+  // The tooltip element may not exist immediately — retry until found
+  if (retries === undefined) retries = 10;
 
-  // The tooltip element is .dw-tooltip inside the shadow root
-  const tooltip = shadowRoot.querySelector('.dw-tooltip');
+  tooltipElement = shadowRoot.querySelector('.dw-tooltip');
 
-  if (!tooltip) {
-    log("⚠️ Native tooltip element not found yet");
+  if (!tooltipElement) {
+    log("❌ No .dw-tooltip found. Retries left: " + retries);
+
+    if (retries > 0) {
+      setTimeout(function() { setupTooltipInterception(retries - 1); }, 300);
+    } else {
+      log("❌ Tooltip interception failed permanently — giving up.");
+    }
     return;
   }
 
-  tooltip.style.setProperty('opacity', '0', 'important');
-  tooltip.style.setProperty('visibility', 'hidden', 'important');
-  tooltip.style.setProperty('pointer-events', 'none', 'important');
-  tooltip.style.setProperty('position', 'absolute', 'important');
-  tooltip.style.setProperty('left', '-9999px', 'important');
+  log("✅ Found .dw-tooltip element");
 
-  nativeTooltipElement = tooltip;
-  log("✅ Native tooltip hidden");
+  hoverOutlineElement = shadowRoot.querySelector('.hover-outline');
+  if (hoverOutlineElement) {
+    log("✅ Found .hover-outline element");
+  } else {
+    log("⚠️ No .hover-outline element found");
+  }
+
+  if (mapData) {
+    setupPathGenerator();
+  }
+
+  observeResizeForPathGenerator();
+  setupTooltipObserver();
+  hideNativeTooltip();
 }
 
-function ensureNativeTooltipHidden() {
-  // Called after each region selection in case the tooltip element was
-  // created after our initial hide attempt (common on mobile first tap)
-  if (nativeTooltipElement) return;
-  hideNativeTooltip();
+function hideNativeTooltip() {
+  if (!tooltipElement) return;
+
+  // On touch devices the tooltip is sticky — the user needs the close button
+  // to dismiss it, so we cannot hide the entire element. Instead we hide
+  // only the visual content while keeping pointer-events intact for the
+  // close button. On desktop there is no close button so we hide fully.
+  const isTouchDevice = window.matchMedia('(hover: none)').matches;
+
+  if (isTouchDevice) {
+    // Hide visual content but keep the close button functional
+    // The .dw-tooltip-close button must remain interactive
+    tooltipElement.style.setProperty('opacity', '0', 'important');
+    tooltipElement.style.setProperty('background', 'transparent', 'important');
+    tooltipElement.style.setProperty('border', 'none', 'important');
+    tooltipElement.style.setProperty('box-shadow', 'none', 'important');
+    // Keep pointer-events so the close button still works
+    log("✅ Native tooltip visually hidden (touch mode — close button preserved)");
+  } else {
+    tooltipElement.style.setProperty('opacity', '0', 'important');
+    tooltipElement.style.setProperty('visibility', 'hidden', 'important');
+    tooltipElement.style.setProperty('pointer-events', 'none', 'important');
+    tooltipElement.style.setProperty('position', 'absolute', 'important');
+    tooltipElement.style.setProperty('left', '-9999px', 'important');
+    log("✅ Native tooltip fully hidden (desktop mode)");
+  }
+}
+
+function setupTooltipObserver() {
+  if (!tooltipElement) return;
+
+  if (tooltipObserver) {
+    tooltipObserver.disconnect();
+  }
+
+  // Watch for changes to the tooltip's content — Datawrapper updates the
+  // innerHTML when the user hovers or taps a region, populating the <h2>
+  // with the region name. We use that name to look up our own data.
+  tooltipObserver = new MutationObserver(function() {
+    const h2 = tooltipElement.querySelector('h2');
+
+    if (!h2) return;
+
+    const regionName = h2.textContent.trim();
+    log("📡 Tooltip h2 changed: " + regionName);
+
+    const regionData = regionTooltips[regionName.toLowerCase()];
+
+    if (regionData) {
+      showInfoBox(regionData.name, regionData.tooltip);
+      updateHoverOutline(regionData.ars);
+      updateRegionPin(regionData.ars);
+      search.value = regionData.name;
+      list.innerHTML = "";
+    } else {
+      log("⚠️ No CSV match for: " + regionName);
+    }
+  });
+
+  tooltipObserver.observe(tooltipElement, {
+    childList: true,
+    subtree: true,
+    characterData: true
+  });
+
+  log("✅ Tooltip MutationObserver active");
 }
 
 
@@ -511,60 +586,7 @@ function clearInfoBox() {
 }
 
 
-// ─── REGION SELECTION ─────────────────────────────────────────────────────────
-
-function selectRegionFromEvent(eventData) {
-  // eventData contains the CSV columns from Datawrapper:
-  // { region: string, AGS: string, tooltip: string, ... }
-  // The datawrapper.on event data contains the CSV columns directly,
-  // so we can populate the info box immediately without waiting for
-  // the async regionTooltips lookup to be ready — this is critical on
-  // mobile where the user may tap before the dataset fetch completes.
-  const regionName = eventData.region;
-  const tooltipHtml = eventData.tooltip;
-  const ags = eventData.AGS;
-
-  if (!regionName) {
-    log("⚠️ region.mouseenter fired with no region name");
-    return;
-  }
-
-  // Show info box immediately from event data — no async dependency
-  showInfoBox(regionName, tooltipHtml || "");
-  search.value = regionName;
-  list.innerHTML = "";
-
-  // Outline and pin need the geometry lookup — use event AGS directly
-  // rather than going through regionTooltips, for the same timing reason
-  if (ags) {
-    updateHoverOutline(ags);
-    updateRegionPin(ags);
-  } else {
-    // AGS not in event data — fall back to regionTooltips if available
-    const regionData = regionTooltips[regionName.toLowerCase()];
-    if (regionData) {
-      updateHoverOutline(regionData.ars);
-      updateRegionPin(regionData.ars);
-    }
-  }
-
-  ensureNativeTooltipHidden();
-}
-
-function selectRegionByName(regionName) {
-  // Used by the search field — looks up from regionTooltips since
-  // we don't have event data here. The dataset will be loaded by the
-  // time a user types a search, so the timing issue doesn't apply.
-  const regionData = regionTooltips[regionName.toLowerCase()];
-
-  if (regionData) {
-    showInfoBox(regionData.name, regionData.tooltip);
-    updateHoverOutline(regionData.ars);
-    updateRegionPin(regionData.ars);
-  } else {
-    log("⚠️ No CSV match for: " + regionName);
-  }
-}
+// ─── SEARCH ───────────────────────────────────────────────────────────────────
 
 function selectRegionFromSearch(regionName) {
   const regionData = regionTooltips[regionName.toLowerCase()];
@@ -577,96 +599,6 @@ function selectRegionFromSearch(regionName) {
     showInfoBox(regionName, "Keine Daten verfügbar");
   }
 }
-
-
-// ─── DATAWRAPPER EVENTS API ───────────────────────────────────────────────────
-
-datawrapper.on('region.mouseenter', ({ chartId, data }) => {
-  if (chartId !== CHART_ID) return;
-  log("📡 region.mouseenter: " + data.region + " AGS: " + data.AGS);
-  selectRegionFromEvent(data);
-});
-
-datawrapper.on('region.mouseleave', ({ chartId }) => {
-  if (chartId !== CHART_ID) return;
-
-  // On touch devices the region stays selected after tap until the user
-  // taps elsewhere — don't clear on mouseleave for touch
-  const isTouchDevice = window.matchMedia('(hover: none)').matches;
-  if (!isTouchDevice) {
-    clearHoverOutline();
-    clearRegionPin();
-  }
-});
-
-
-// ─── CHART INITIALISATION ─────────────────────────────────────────────────────
-
-function waitForChart() {
-  const component = document.querySelector('datawrapper-visualization');
-
-  if (component && component.shadowRoot) {
-    shadowRoot = component.shadowRoot;
-    log("✅ Found Datawrapper web component");
-
-    loadFromChartData();
-
-    hoverOutlineElement = shadowRoot.querySelector('.hover-outline');
-    if (hoverOutlineElement) {
-      log("✅ Found hover-outline element");
-    }
-
-    // Attempt to hide tooltip immediately — it may already exist on desktop
-    hideNativeTooltip();
-
-    // On desktop the tooltip element exists from the start; on mobile it may
-    // not be present until first interaction. Watch for it being added.
-    observeForNativeTooltip();
-
-    observeResizeForPathGenerator();
-  } else {
-    setTimeout(waitForChart, 300);
-  }
-}
-
-setTimeout(waitForChart, 500);
-
-function observeForNativeTooltip() {
-  // If the tooltip element doesn't exist yet (common on mobile), watch the
-  // shadow root for it being added and hide it immediately when it appears
-  if (nativeTooltipElement) return;
-
-  const observer = new MutationObserver(() => {
-    const tooltip = shadowRoot.querySelector('.dw-tooltip');
-    if (tooltip) {
-      observer.disconnect();
-      hideNativeTooltip();
-    }
-  });
-
-  observer.observe(shadowRoot, { childList: true, subtree: true });
-  log("👀 Watching shadow DOM for native tooltip element");
-}
-
-function observeResizeForPathGenerator() {
-  const svg = shadowRoot.querySelector('svg.svg-main');
-  if (!svg) return;
-
-  let resizeTimeout;
-
-  const resizeObserver = new ResizeObserver(() => {
-    clearTimeout(resizeTimeout);
-    resizeTimeout = setTimeout(() => {
-      setupPathGenerator();
-    }, 500);
-  });
-
-  resizeObserver.observe(svg);
-  log("🔄 Resize observer attached to SVG");
-}
-
-
-// ─── SEARCH ───────────────────────────────────────────────────────────────────
 
 function fuzzySearch(query) {
   if (!query) return [];
@@ -717,3 +649,42 @@ document.addEventListener("click", (e) => {
     list.innerHTML = "";
   }
 });
+
+
+// ─── CHART INITIALISATION ─────────────────────────────────────────────────────
+
+function waitForChart() {
+  const component = document.querySelector('datawrapper-visualization');
+
+  if (component && component.shadowRoot) {
+    shadowRoot = component.shadowRoot;
+    log("✅ Found Datawrapper web component");
+
+    loadFromChartData();
+
+    // Start tooltip interception after a short delay to allow Datawrapper
+    // to finish rendering its internal DOM before we query it
+    setTimeout(function() { setupTooltipInterception(10); }, 500);
+  } else {
+    setTimeout(waitForChart, 300);
+  }
+}
+
+setTimeout(waitForChart, 500);
+
+function observeResizeForPathGenerator() {
+  const svg = shadowRoot.querySelector('svg.svg-main');
+  if (!svg) return;
+
+  let resizeTimeout;
+
+  const resizeObserver = new ResizeObserver(() => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+      setupPathGenerator();
+    }, 500);
+  });
+
+  resizeObserver.observe(svg);
+  log("🔄 Resize observer attached to SVG");
+}
