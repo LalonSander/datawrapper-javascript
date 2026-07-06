@@ -7,25 +7,32 @@
 
   <link rel="stylesheet" href="https://taz.de/lib/taz-verlag-node/css/styles__news.min.css">
 
-  <!-- Datawrapper events API — provides datawrapper.on() for region interaction events -->
+  <!-- Datawrapper events API — provides datawrapper.on() for region interaction -->
   <script src="//static.dwcdn.net/js/events.js"></script>
 
   <style>
 
     /* ── CSS custom properties ────────────────────────────────────────────────
-       --chrome-height is the sum of all fixed-height elements above the chart:
-         h1 (~36px) + mgb-medium (20px)
-         + search frame (50px) + mgb-medium (20px)
-         + info box (110px fixed) + mgb-medium (20px)
-         + chart mgb-medium (20px)
-         = 276px → rounded up to 280px for safety
+       --chrome-height is the total fixed height of everything ABOVE the chart.
+       It is measured conservatively (larger than actual) so the chart never
+       overflows. If the chart has a gap at the bottom, reduce this value.
 
-       This value is a layout constant, not recalculated at runtime.
-       It only changes at breakpoints where element sizes change.
+       Measured at desktop with info box in its content state (tallest):
+         body margin top:          20px
+         h1 (one line ~28px)
+         + mgb-medium:             20px  → ~48px
+         search frame:             50px
+         + mgb-medium:             20px  → 70px
+         info box min 110px
+         + mgb-medium:             20px  → 130px
+         chart mgb-medium:         20px
+         body margin bottom:       20px
+         ─────────────────────────────
+         Total:                   ~308px → use 320px for safety
     ── */
     :root {
       --body-margin-v: 20px;
-      --chrome-height: 280px;
+      --chrome-height: 320px;
     }
 
     /* ── Page layout ── */
@@ -106,12 +113,12 @@
     }
 
     /* ── Info box ──
-       Fixed height so the chart height calculation is stable.
-       110px = p-medium padding (20px top + 20px bottom) + typo-head-xxs title
-       (~22px) + mgb-xsmall (5px) + two lines of typo-short-text (~16px each).
-       The placeholder text centers within this fixed height via flexbox. ── */
+       min-height rather than fixed height — content determines size.
+       The --chrome-height accounts for the tallest expected content state
+       so the chart height is stable in practice even though the box can
+       technically grow if tooltip text is unusually long. ── */
     #info-box {
-      height: 110px;
+      min-height: 110px;
       box-sizing: border-box;
     }
     #info-box .content {
@@ -129,17 +136,14 @@
     }
 
     /* ── Chart container ──
-       Takes all remaining vertical space after the chrome above it.
-       dvh excludes the mobile browser's address bar from the calculation.
-       min-height prevents the map from collapsing on very short screens. ── */
+       dvh (dynamic viewport height) excludes mobile browser chrome.
+       The !important overrides Datawrapper's own inline height on the
+       web component. min-height prevents total collapse on short screens. ── */
     #chart-container {
       position: relative;
       height: calc(100dvh - (var(--body-margin-v) * 2) - var(--chrome-height));
-      min-height: 280px;
+      min-height: 260px;
     }
-
-    /* Force the Datawrapper web component to fill our container height
-       rather than using its own fixed embed-height from the chart config */
     #chart-container datawrapper-visualization {
       height: 100% !important;
     }
@@ -161,13 +165,14 @@
 
 
     /* ════════════════════════════════════════════════════════════════════
-       BREAKPOINT: 768px — tablet
-       h1 may wrap to two lines, adding ~36px to chrome height
+       768px — tablet
+       h1 wraps to 2 lines (+28px), margins reduce.
+       New chrome: 320px - 20px saved on margins + 28px h1 wrap = 328px
     ════════════════════════════════════════════════════════════════════ */
     @media screen and (max-width: 768px) {
       :root {
         --body-margin-v: 15px;
-        --chrome-height: 316px; /* 280px + 36px for h1 wrapping */
+        --chrome-height: 330px;
       }
 
       body {
@@ -177,47 +182,43 @@
 
 
     /* ════════════════════════════════════════════════════════════════════
-       BREAKPOINT: 480px — mobile
-       Search field stretches full width.
-       Info box padding reduces from 20px to 12px saving 16px vertically,
-       so fixed height reduces from 110px to 94px and chrome adjusts.
+       480px — mobile
+       Search stretches full width.
+       Info box padding reduces to 12px (saves 16px vertically).
+       h1 may wrap to 3 lines at narrow widths (+28px more).
+       Tooltip content wraps more → info box may be taller.
+       We add extra headroom to --chrome-height so the map has room.
+       New chrome: 330px + 28px h1 + 16px reduced padding = 374px
+       → use 380px for safety.
     ════════════════════════════════════════════════════════════════════ */
     @media screen and (max-width: 480px) {
       :root {
         --body-margin-v: 10px;
-        /* h1 wraps more, info box padding reduces, search same height:
-           h1 (~72px) + mgb (20px) + search (50px) + mgb (20px)
-           + info box (94px) + mgb (20px) + mgb below chart (20px)
-           = 296px */
-        --chrome-height: 296px;
+        --chrome-height: 380px;
       }
 
       body {
         margin: var(--body-margin-v) 10px;
       }
 
-      /* Search frame stretches to fill available width */
       .search-frame {
         width: 100%;
         display: flex;
       }
 
-      /* Input fills remaining space after the 50px button + 10px gap */
       #search {
         flex: 1;
         width: auto;
       }
 
-      /* Autocomplete matches the stretched search frame */
       #autocomplete-list {
         width: 100%;
       }
 
-      /* Reduce info box padding and recalculate fixed height:
-         12px top + 12px bottom padding + same content = 94px */
+      /* Reduce padding to give more vertical space to the map */
       #info-box {
         padding: 12px !important;
-        height: 94px;
+        min-height: 90px;
       }
     }
 
