@@ -656,9 +656,15 @@ function waitForMapSvg() {
 }
 
 function onMapReady() {
-  // Hide the preview placeholder and reveal the search + info box
+  // Hide the placeholder first, then reveal the map controls on the next
+  // animation frame — this gives the browser time to repaint the placeholder
+  // removal before the map and search field appear, preventing the brief
+  // moment where both are visible simultaneously
   loadPlaceholder.style.display = "none";
-  mapControls.style.display = "block";
+
+  requestAnimationFrame(function() {
+    mapControls.style.display = "block";
+  });
 }
 
 function observeResizeForPathGenerator() {
