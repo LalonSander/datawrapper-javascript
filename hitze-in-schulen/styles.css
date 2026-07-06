@@ -1,0 +1,233 @@
+/* =============================================================================
+   hitze-in-schulen — component styles
+   Loaded alongside https://taz.de/lib/taz-verlag-node/css/styles__news.min.css
+   which provides typography, colour tokens, and spacing utilities.
+   This file covers structural layout, the search component, info box states,
+   chart container sizing, and responsive breakpoints.
+   ============================================================================= */
+
+
+/* ── Page layout ──────────────────────────────────────────────────────────────
+   Override taz.de's grey body background — this is an embedded widget,
+   not a full page. max-width keeps the layout readable on wide screens. */
+body {
+  margin: 20px;
+  max-width: 900px;
+  background: #fff;
+}
+
+
+/* ── Search frame ─────────────────────────────────────────────────────────────
+   Fixed dimensions from Figma spec. position: relative is required so the
+   absolutely-positioned autocomplete dropdown is anchored to this element. */
+.search-frame {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  width: 351px;
+  height: 50px;
+  gap: 10px;
+}
+
+
+/* ── Search input ─────────────────────────────────────────────────────────────
+   Width/height are Figma-spec values. Typography and colour come from taz
+   utility classes applied in HTML (typo-form-input-entry, has-text-text,
+   has-background-white, ph-gap). border-radius: 0 overrides any browser
+   default rounding. */
+#search {
+  width: 291px;
+  height: 50px;
+  border: 1px solid rgba(31, 31, 31, 1);
+  border-radius: 0;
+  outline: none;
+  box-sizing: border-box;
+}
+
+
+/* ── Search button ────────────────────────────────────────────────────────────
+   The taz stylesheet resets all button backgrounds to transparent globally,
+   so we must explicitly restore the dark background here with a full rule.
+   No border-radius — matches the sharp-cornered Figma design. */
+#search-button {
+  width: 50px;
+  height: 50px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: rgba(31, 31, 31, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+#search-button:hover {
+  /* taz .has-background-tzi-hover value */
+  background: #ad0924;
+}
+
+#search-button svg {
+  width: 22px;
+  height: 22px;
+}
+
+
+/* ── Autocomplete dropdown ────────────────────────────────────────────────────
+   Absolutely positioned below the search frame. z-index: 9999 ensures it
+   sits above the Datawrapper chart container. display: none on :empty removes
+   the element entirely when there are no suggestions, preventing a ghost
+   border line from showing when the input is empty or cleared. */
+#autocomplete-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 351px;
+  max-height: 250px;
+  overflow-y: auto;
+  z-index: 9999;
+  border: 1px solid #a6a6a6;
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+#autocomplete-list:empty {
+  display: none;
+}
+
+#autocomplete-list div {
+  border-bottom: 1px solid #e3e3e3;
+  color: #1f1f1f;
+  padding: 10px 15px;
+}
+
+#autocomplete-list div:last-child {
+  border-bottom: none;
+}
+
+#autocomplete-list div:hover {
+  /* taz light red highlight + primary red text */
+  background: #fceef0;
+  color: #d50d2e;
+}
+
+
+/* ── Info box ─────────────────────────────────────────────────────────────────
+   The info box has two states: placeholder (idle) and has-content (region
+   selected). Switching between them is done by toggling the .has-content class
+   in JavaScript. Background, padding, margin, and typography come from taz
+   utility classes in HTML (has-background-form, p-medium, mgb-medium,
+   typo-head-xxs, typo-short-text).
+
+   The border and display rules are set inline on the element in HTML since
+   they need to coexist with the taz utility classes — this rule only handles
+   the has-content state override and the show/hide toggle logic. */
+#info-box {
+  min-height: 110px;
+  box-sizing: border-box;
+}
+
+#info-box .content {
+  display: none;
+  width: 100%;
+}
+
+#info-box.has-content .placeholder {
+  display: none;
+}
+
+#info-box.has-content .content {
+  display: block;
+}
+
+#info-box.has-content {
+  /* Switch border colour to taz primary red when a region is selected */
+  border-color: #d50d2e;
+}
+
+
+/* ── Chart container ──────────────────────────────────────────────────────────
+   Fixed height per breakpoint — simpler and more predictable than trying to
+   calculate remaining viewport space dynamically. The !important on the web
+   component overrides Datawrapper's own inline embed-height from chart config. */
+#chart-container {
+  position: relative;
+  height: 600px;
+}
+
+#chart-container datawrapper-visualization {
+  height: 100% !important;
+}
+
+
+/* ── Debug panel ──────────────────────────────────────────────────────────────
+   Scrollable pre-formatted log output for development. Hidden by default —
+   the Toggle Debug button in HTML adds/removes the .hidden class. */
+#debug {
+  background: #f0f0f0;
+  border: 1px solid #e3e3e3;
+  padding: 12px;
+  font-family: monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+#debug.hidden {
+  display: none;
+}
+
+
+/* =============================================================================
+   BREAKPOINT: 768px — tablet
+   Reduce body margin. Chart height reduced to leave room for content above.
+   ============================================================================= */
+@media screen and (max-width: 768px) {
+  body {
+    margin: 15px;
+  }
+
+  #chart-container {
+    height: 450px;
+  }
+}
+
+
+/* =============================================================================
+   BREAKPOINT: 480px — mobile
+   Body margin reduces further. Search frame stretches to full page width.
+   Info box padding reduces to save vertical space. Chart height reduced.
+   ============================================================================= */
+@media screen and (max-width: 480px) {
+  body {
+    margin: 10px;
+  }
+
+  /* Search frame stretches to fill available page width */
+  .search-frame {
+    width: 100%;
+    display: flex;
+  }
+
+  /* Input fills all remaining space after the fixed 50px button + 10px gap */
+  #search {
+    flex: 1;
+    width: auto;
+  }
+
+  /* Autocomplete dropdown matches the stretched search frame width */
+  #autocomplete-list {
+    width: 100%;
+  }
+
+  /* Reduce padding to reclaim vertical space for the map */
+  #info-box {
+    padding: 12px !important;
+    min-height: 90px;
+  }
+
+  #chart-container {
+    height: 350px;
+  }
+}
