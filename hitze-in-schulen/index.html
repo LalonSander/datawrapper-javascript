@@ -7,15 +7,25 @@
 
   <link rel="stylesheet" href="https://taz.de/lib/taz-verlag-node/css/styles__news.min.css">
 
+  <!-- Datawrapper events API — provides datawrapper.on() for region interaction events -->
+  <script src="//static.dwcdn.net/js/events.js"></script>
+
   <style>
 
-    /* ── CSS custom properties for the chrome height calculation ──────────────
-       These track the heights of everything above and below the chart so we
-       can give the chart exactly the remaining viewport space.
-       Values are updated at each breakpoint. */
+    /* ── CSS custom properties ────────────────────────────────────────────────
+       --chrome-height is the sum of all fixed-height elements above the chart:
+         h1 (~36px) + mgb-medium (20px)
+         + search frame (50px) + mgb-medium (20px)
+         + info box (110px fixed) + mgb-medium (20px)
+         + chart mgb-medium (20px)
+         = 276px → rounded up to 280px for safety
+
+       This value is a layout constant, not recalculated at runtime.
+       It only changes at breakpoints where element sizes change.
+    ── */
     :root {
-      --body-margin-v: 20px;      /* top + bottom body margin (each side) */
-      --chrome-height: 260px;     /* h1 + search + infobox + spacing above chart */
+      --body-margin-v: 20px;
+      --chrome-height: 280px;
     }
 
     /* ── Page layout ── */
@@ -95,7 +105,15 @@
       display: none;
     }
 
-    /* ── Info box ── */
+    /* ── Info box ──
+       Fixed height so the chart height calculation is stable.
+       110px = p-medium padding (20px top + 20px bottom) + typo-head-xxs title
+       (~22px) + mgb-xsmall (5px) + two lines of typo-short-text (~16px each).
+       The placeholder text centers within this fixed height via flexbox. ── */
+    #info-box {
+      height: 110px;
+      box-sizing: border-box;
+    }
     #info-box .content {
       display: none;
       width: 100%;
@@ -111,16 +129,18 @@
     }
 
     /* ── Chart container ──
-       Height = full viewport minus body margins (top+bottom) minus all chrome.
-       dvh is used so mobile browser chrome (address bar) is excluded.
-       The !important overrides Datawrapper's own inline height on the component. */
+       Takes all remaining vertical space after the chrome above it.
+       dvh excludes the mobile browser's address bar from the calculation.
+       min-height prevents the map from collapsing on very short screens. ── */
     #chart-container {
       position: relative;
       height: calc(100dvh - (var(--body-margin-v) * 2) - var(--chrome-height));
-      min-height: 300px;
+      min-height: 280px;
     }
-    #chart-container datawrapper-visualization,
-    #chart-container > div {
+
+    /* Force the Datawrapper web component to fill our container height
+       rather than using its own fixed embed-height from the chart config */
+    #chart-container datawrapper-visualization {
       height: 100% !important;
     }
 
@@ -140,15 +160,14 @@
     }
 
 
-    /* ════════════════════════════════════════════════════════════════════════
-       BREAKPOINT: tablet — 769px to 768px
-       Minor adjustments only, layout stays the same
-    ════════════════════════════════════════════════════════════════════════ */
+    /* ════════════════════════════════════════════════════════════════════
+       BREAKPOINT: 768px — tablet
+       h1 may wrap to two lines, adding ~36px to chrome height
+    ════════════════════════════════════════════════════════════════════ */
     @media screen and (max-width: 768px) {
       :root {
         --body-margin-v: 15px;
-        /* h1 wraps at this width, so chrome is slightly taller */
-        --chrome-height: 290px;
+        --chrome-height: 316px; /* 280px + 36px for h1 wrapping */
       }
 
       body {
@@ -157,16 +176,20 @@
     }
 
 
-    /* ════════════════════════════════════════════════════════════════════════
-       BREAKPOINT: mobile — up to 480px
-       Search field stretches to full width, margins reduce further
-    ════════════════════════════════════════════════════════════════════════ */
+    /* ════════════════════════════════════════════════════════════════════
+       BREAKPOINT: 480px — mobile
+       Search field stretches full width.
+       Info box padding reduces from 20px to 12px saving 16px vertically,
+       so fixed height reduces from 110px to 94px and chrome adjusts.
+    ════════════════════════════════════════════════════════════════════ */
     @media screen and (max-width: 480px) {
       :root {
         --body-margin-v: 10px;
-        /* Less h1 text fits per line at narrow width, so chrome grows.
-           Info box also loses its padding benefit at this size. */
-        --chrome-height: 320px;
+        /* h1 wraps more, info box padding reduces, search same height:
+           h1 (~72px) + mgb (20px) + search (50px) + mgb (20px)
+           + info box (94px) + mgb (20px) + mgb below chart (20px)
+           = 296px */
+        --chrome-height: 296px;
       }
 
       body {
@@ -179,20 +202,22 @@
         display: flex;
       }
 
-      /* Input takes all remaining space after the fixed-width button */
+      /* Input fills remaining space after the 50px button + 10px gap */
       #search {
-        width: calc(100% - 50px - 10px); /* full width minus button minus gap */
         flex: 1;
+        width: auto;
       }
 
-      /* Autocomplete dropdown matches the full-width search frame */
+      /* Autocomplete matches the stretched search frame */
       #autocomplete-list {
         width: 100%;
       }
 
-      /* Info box padding reduces to save vertical space */
+      /* Reduce info box padding and recalculate fixed height:
+         12px top + 12px bottom padding + same content = 94px */
       #info-box {
         padding: 12px !important;
+        height: 94px;
       }
     }
 
@@ -216,7 +241,8 @@
     <div id="autocomplete-list"></div>
   </div>
 
-  <div id="info-box" class="has-background-form p-medium mgb-medium" style="border: 1px solid #e3e3e3; display: flex; align-items: center; transition: border-color 0.2s ease;">
+  <div id="info-box" class="has-background-form p-medium mgb-medium"
+       style="border: 1px solid #e3e3e3; display: flex; align-items: center; transition: border-color 0.2s ease;">
     <div class="placeholder typo-short-text has-text-text-disabled">
       👆 Suche nach einer Gemeinde oder wähle sie in der Karte aus
     </div>
