@@ -614,8 +614,10 @@ loadMapButton.addEventListener("click", function() {
 });
 
 function injectDatawrapperScript() {
-  // Show the embed container so Datawrapper has a visible parent to size into
+  // Make the embed container present in the layout so Datawrapper can measure
+  // and render into it, but keep it invisible until the map is fully ready
   datawrapperEmbed.style.display = "block";
+  datawrapperEmbed.style.visibility = "hidden";
 
   // Create the embed script element and append it — this triggers the load
   const scriptElement = document.createElement("script");
@@ -648,24 +650,20 @@ function waitForMapSvg() {
   const svg = shadowRoot.querySelector("svg.svg-main");
 
   if (svg) {
-    loadPlaceholder.style.display = "none";
     setupTooltipInterception(10);
-    mapControls.style.display = "block";
+    onMapReady();
   } else {
     setTimeout(waitForMapSvg, 200);
   }
 }
 
 function onMapReady() {
-  // Hide the placeholder first, then reveal the map controls on the next
-  // animation frame — this gives the browser time to repaint the placeholder
-  // removal before the map and search field appear, preventing the brief
-  // moment where both are visible simultaneously
+  // Hide the placeholder, reveal the now-rendered map, and show the controls
+  // all in the same paint cycle — the map was already rendered but invisible,
+  // so this is a clean single swap with no flash of intermediate states
   loadPlaceholder.style.display = "none";
-
-  requestAnimationFrame(function() {
-    mapControls.style.display = "block";
-  });
+  datawrapperEmbed.style.visibility = "visible";
+  mapControls.style.display = "block";
 }
 
 function observeResizeForPathGenerator() {
