@@ -670,3 +670,77 @@ function observeResizeForPathGenerator() {
   resizeObserver.observe(svg);
   log("🔄 Resize observer attached to SVG");
 }
+
+// ─── LAZY LOAD BUTTON ─────────────────────────────────────────────────────────
+// The map embed script is not loaded on page load — it is injected into the
+// DOM only after the user clicks the load button. This avoids fetching the
+// 5MB+ basemap and dataset on initial page load.
+//
+// Once the embed script is injected, we wait for the datawrapper-visualization
+// custom element to appear in the DOM with its shadowRoot populated, which
+// signals that Datawrapper has finished rendering and is ready to interact with.
+
+const loadMapButton = document.getElementById("load-map-button");
+const loadPlaceholder = document.getElementById("load-placeholder");
+const uiChrome = document.getElementById("ui-chrome");
+const datawrapperEmbed = document.getElementById("datawrapper-embed");
+
+loadMapButton.addEventListener("click", function() {
+  // Show loading state on the button while the map initialises
+  loadMapButton.textContent = "Karte wird geladen…";
+  loadMapButton.disabled = true;
+
+  // Inject the Datawrapper embed script dynamically — this is what triggers
+  // Datawrapper to start fetching the map data and rendering the component
+  injectDatawrapperScript();
+
+  // Begin polling for the web component to appear
+  waitForChart();
+});
+
+function injectDatawrapperScript() {
+  const scriptElement = document.createElement("script");
+  scriptElement.src = "https://datawrapper.dwcdn.net/eC2gr/embed.js";
+  scriptElement.charset = "utf-8";
+  scriptElement.defer = true;
+
+  datawrapperEmbed.style.display = "block";
+  datawrapperEmbed.appendChild(scriptElement);
+}
+
+function onChartReady() {
+  // Hide the placeholder and show the search + info box
+  loadPlaceholder.classList.add("is-loading");
+  uiChrome.classList.add("is-ready");
+}
+
+function waitForChart() {
+  const component = document.querySelector("datawrapper-visualization");
+
+  if (component && component.shadowRoot) {
+    shadowRoot = component.shadowRoot;
+
+    loadFromChartData();
+
+    // The shadowRoot is present but Datawrapper may still be rendering.
+    // We detect readiness by watching for the SVG to appear, which is
+    // the most reliable signal that the map is fully rendered.
+    waitForSvg();
+  } else {
+    setTimeout(waitForChart, 300);
+  }
+}
+
+function waitForSvg() {
+  // Poll for svg.svg-main inside the shadow DOM — this element is only
+  // present once Datawrapper has finished rendering the choropleth map
+  const svg = shadowRoot.querySelector("svg.svg-main");
+
+  if (svg) {
+    // Map is rendered — set up tooltip interception and reveal the UI
+    setTimeout(function() { setupTooltipInterception(10); }, 100);
+    onChartReady();
+  } else {
+    setTimeout(waitForSvg, 200);
+  }
+}
