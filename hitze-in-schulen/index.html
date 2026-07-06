@@ -4,15 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wie oft ist es in deiner Gemeinde zu heiß zum Lernen?</title>
-
   <link rel="stylesheet" href="https://taz.de/lib/taz-verlag-node/css/styles__news.min.css">
   <link rel="stylesheet" href="styles.css">
-  
 </head>
 <body>
   <h1 class="typo-r-head-extrasmall mgb-medium">Wie oft ist es in deiner Gemeinde zu heiß zum Lernen?</h1>
 
-  <div id="ui-chrome" style="display: none;">
+  <!-- Search and info box — hidden until map is ready, revealed by onMapReady() in script.js -->
+  <div id="map-controls" style="display: none;">
     <div class="search-frame mgb-medium">
       <input
         id="search"
@@ -27,7 +26,7 @@
       </button>
       <div id="autocomplete-list"></div>
     </div>
-  
+
     <div id="info-box" class="has-background-form p-medium mgb-medium"
          style="border: 1px solid #e3e3e3; display: flex; align-items: center; transition: border-color 0.2s ease;">
       <div class="placeholder typo-short-text has-text-text-disabled">
@@ -38,11 +37,11 @@
         <div class="region-data typo-short-text has-text-text" id="info-data"></div>
       </div>
     </div>
-  </div><!-- /#ui-chrome -->
+  </div><!-- /#map-controls -->
 
   <div id="chart-container" class="mgb-medium">
 
-    <!-- Placeholder shown before the user clicks load -->
+    <!-- Placeholder: preview image + load button, shown before user clicks -->
     <div id="load-placeholder">
       <img
         src="https://datawrapper.dwcdn.net/eC2gr/full.png"
@@ -54,11 +53,14 @@
       </button>
     </div>
 
-    <!-- Datawrapper embed — injected only after button click -->
-    <div id="datawrapper-embed" style="display: none;">
-      <script type="text/javascript" defer src="https://datawrapper.dwcdn.net/eC2gr/embed.js" charset="utf-8"></script>
-      <noscript><img src="https://datawrapper.dwcdn.net/eC2gr/full.png" alt="" /></noscript>
-    </div>
+    <!--
+      Datawrapper embed container — starts empty.
+      The embed script is injected here dynamically by injectDatawrapperScript()
+      in script.js only after the user clicks the load button.
+      NOTE: no <script> tag here — putting a script tag inside a hidden div
+      would execute it immediately regardless of display:none.
+    -->
+    <div id="datawrapper-embed" style="display: none;"></div>
 
   </div>
 
